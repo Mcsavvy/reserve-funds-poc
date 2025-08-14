@@ -1,0 +1,124 @@
+{
+  "managementCompanies": [
+    {
+      "company": "Premier Property Management",
+      "company_type": "property",
+      "email": "contact@premierpm.com",
+      "phone": "555-0100",
+      "address": "456 Business Park Dr",
+      "city": "Corporate City",
+      "zip": "54321",
+      "state": "CA",
+      "active": true
+    }
+  ],
+  "associations": [
+    {
+      "association": "Sunset Gardens HOA",
+      "company_type": "reserve",
+      "email": "board@sunsetgardens.com",
+      "phone": "555-0123",
+      "address": "123 Sunset Boulevard",
+      "city": "Residential Town",
+      "zip": "12345",
+      "state": "CA",
+      "active": true,
+      "managedBy": "Premier Property Management"
+    },
+    {
+      "association": "Maple Ridge Community",
+      "company_type": "reserve",
+      "email": "admin@mapleridge.org",
+      "phone": "555-0145",
+      "address": "789 Maple Street",
+      "city": "Independent City",
+      "zip": "67890",
+      "state": "CA",
+      "active": true,
+      "managedBy": null
+    }
+  ],
+  "models": [
+    {
+      "name": "Sunset Gardens Reserve Study 2024",
+      "associationName": "Sunset Gardens HOA",
+      "housing": 120,
+      "starting_amount": 75000,
+      "inflation_rate": 3.2,
+      "monthly_fees": 285,
+      "monthly_fees_rate": 2.5,
+      "cushion_fund": 15000,
+      "period": 30,
+      "bank_rate": 3.0,
+      "bank_int_rate": 2.0,
+      "loan_years": 30,
+      "fiscal_year": "current",
+      "inv_strategy": "Conservative bond portfolio with capital preservation focus",
+      "active": true
+    },
+    {
+      "name": "Maple Ridge Capital Improvement Plan",
+      "associationName": "Maple Ridge Community",
+      "housing": 85,
+      "starting_amount": 45000,
+      "inflation_rate": 3.0,
+      "monthly_fees": 220,
+      "monthly_fees_rate": 2.0,
+      "cushion_fund": 8000,
+      "period": 25,
+      "bank_rate": 2.8,
+      "bank_int_rate": 1.8,
+      "loan_years": 25,
+      "fiscal_year": "current",
+      "inv_strategy": "Balanced investment approach with moderate growth",
+      "active": true
+    }
+  ],
+  "modelItems": [
+    {
+      "modelName": "Sunset Gardens Reserve Study 2024",
+      "items": [
+        {
+          "name": "Roof Replacement - Main Building",
+          "redundancy": 1,
+          "remaining_life": 12,
+          "cost": 95000,
+          "is_sirs": true
+        },
+        {
+          "name": "Pool Equipment Replacement",
+          "redundancy": 1,
+          "remaining_life": 8,
+          "cost": 35000,
+          "is_sirs": false
+        },
+        {
+          "name": "Exterior Painting",
+          "redundancy": 1,
+          "remaining_life": 4,
+          "cost": 22000,
+          "is_sirs": false
+        }
+      ]
+    },
+    {
+      "modelName": "Maple Ridge Capital Improvement Plan",
+      "items": [
+        {
+          "name": "Asphalt Resurfacing",
+          "redundancy": 1,
+          "remaining_life": 6,
+          "cost": 45000,
+          "is_sirs": true
+        },
+        {
+          "name": "Playground Equipment",
+          "redundancy": 1,
+          "remaining_life": 10,
+          "cost": 18000,
+          "is_sirs": false
+        }
+      ]
+    }
+  ]
+}
