@@ -85,6 +85,7 @@ export default function SimulationPage({ params }: SimulationPageProps) {
     };
 
     loadModelData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isInitialized, resolvedParams.modelId]);
 
   // Separate effect to handle association lookup when model or associations change
@@ -95,6 +96,7 @@ export default function SimulationPage({ params }: SimulationPageProps) {
     } else if (model && !associations) {
       setAssociation(null);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [model?.id, associations]);
 
   const handleSettingsChange = (newSettings: {
