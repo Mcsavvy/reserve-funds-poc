@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTrigger } from '@/components/ui/dialog';
-import { PlusIcon, BuildingIcon, ChartBarIcon, CogIcon } from 'lucide-react';
+import { PlusIcon, BuildingIcon, ChartBarIcon, CogIcon, TrashIcon } from 'lucide-react';
 import { ManagementCompany, Association } from '@/lib/db-types';
 
 // We'll import these from separate form files later
@@ -17,6 +17,7 @@ interface QuickActionsProps {
   onAddAssociation: (association: any) => Promise<any>;
   onAddModel: (model: any) => Promise<any>;
   onSeedSampleData: () => void;
+  onClearAllData: () => void;
 }
 
 export function QuickActions({
@@ -26,6 +27,7 @@ export function QuickActions({
   onAddAssociation,
   onAddModel,
   onSeedSampleData,
+  onClearAllData,
 }: QuickActionsProps) {
   const [showAddManagementCompany, setShowAddManagementCompany] = useState(false);
   const [showAddAssociation, setShowAddAssociation] = useState(false);
@@ -92,6 +94,15 @@ export function QuickActions({
         >
           <BuildingIcon className="h-4 w-4 mr-2" />
           Generate Sample Data
+        </Button>
+
+        <Button 
+          className="w-full justify-start" 
+          variant="destructive"
+          onClick={onClearAllData}
+        >
+          <TrashIcon className="h-4 w-4 mr-2" />
+          Clear All Data
         </Button>
       </CardContent>
     </Card>

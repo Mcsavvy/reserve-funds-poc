@@ -20,7 +20,8 @@ import {
   Pie,
   Cell,
   Area,
-  AreaChart
+  AreaChart,
+  ComposedChart
 } from 'recharts';
 import { 
   TrendingUpIcon, 
@@ -42,9 +43,8 @@ import {
 type SimulationSettings = {
   projectionYears: number;
   customInflationRate: number | null;
-  customMonthlyFees: number | null;
+  customBaseMaintenance: number | null;
   targetMinBalance: number;
-  includeInterest: boolean;
 };
 
 interface SimulationResultsProps {
@@ -59,8 +59,7 @@ export function SimulationResults({ model, modelItems, settings }: SimulationRes
   const adjustedModel = useMemo(() => ({
     ...model,
     inflation_rate: settings.customInflationRate ?? model.inflation_rate,
-    monthly_fees: settings.customMonthlyFees ?? model.monthly_fees,
-    bank_int_rate: settings.includeInterest ? model.bank_int_rate : 0,
+    base_maintenance: settings.customBaseMaintenance ?? model.base_maintenance,
   }), [model, settings]);
 
   const projections = useMemo(() => 
@@ -78,20 +77,34 @@ export function SimulationResults({ model, modelItems, settings }: SimulationRes
     [adjustedModel, modelItems, settings.projectionYears]
   );
 
-  // Chart data preparation
-  const balanceChartData = projections.map(p => ({
-    year: p.year,
-    balance: p.endingBalance,
-    income: p.income,
-    expenses: p.expenses,
+  // Chart data preparation - Financial model format
+  const balanceChartData = projections.map((p, index) => ({
+    year: index + 1,
+    balance: p.closingBalance,
+    openingBalance: p.openingBalance,
     targetMinBalance: settings.targetMinBalance,
   }));
 
-  const cashFlowData = projections.map(p => ({
-    year: p.year,
-    income: p.income,
-    expenses: p.expenses,
-    netFlow: p.income - p.expenses,
+  const cashFlowData = projections.map((p, index) => ({
+    year: index + 1,
+    balance: p.closingBalance,
+    totalMaintenanceCollected: p.totalMaintenanceCollected,
+    totalCashOutflows: p.baseMaintenance + p.futureExpenses + p.loanRepayments,
+    baseMaintenance: p.baseMaintenance,
+    futureExpenses: p.futureExpenses,
+    loanRepayments: p.loanRepayments,
+    deficit: p.closingBalance < 0 ? Math.abs(p.closingBalance) : 0,
+  }));
+
+  // Financial model data table
+  const financialModelData = projections.map((p, index) => ({
+    year: index + 1,
+    totalMaintenanceCollected: p.totalMaintenanceCollected,
+    totalCashOutflows: p.baseMaintenance + p.futureExpenses + p.loanRepayments,
+    closingBalance: p.closingBalance,
+    baseMaintenance: p.baseMaintenance,
+    futureExpenses: p.futureExpenses,
+    loanRepayments: p.loanRepayments,
   }));
 
   // Component replacement schedule
@@ -230,13 +243,234 @@ export function SimulationResults({ model, modelItems, settings }: SimulationRes
       )}
 
       {/* Main Charts and Data */}
-      <Tabs defaultValue="overview" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
+      <Tabs defaultValue="financial-model" className="w-full">
+        <TabsList className="grid w-full grid-cols-5">
+          <TabsTrigger value="financial-model">Model Projections</TabsTrigger>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="cash-flow">Cash Flow</TabsTrigger>
           <TabsTrigger value="schedule">Replacement Schedule</TabsTrigger>
           <TabsTrigger value="analysis">Analysis</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="financial-model" className="space-y-6">
+          {/* Financial Model Data Table */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Financial Model Projections</CardTitle>
+              <CardDescription>
+                Year-by-year financial projections using the model's formulas
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b bg-gray-50">
+                      <th className="text-left p-2 font-medium">Year</th>
+                      <th className="text-right p-2 font-medium">Total Maintenance Collected</th>
+                      <th className="text-right p-2 font-medium">Total Cash Outflows (Base + FE + Loans)</th>
+                      <th className="text-right p-2 font-medium">Closing Balance</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {financialModelData.slice(0, 10).map((row) => (
+                      <tr key={row.year} className="border-b hover:bg-gray-50">
+                        <td className="p-2">{row.year}</td>
+                        <td className="p-2 text-right">{formatCurrency(row.totalMaintenanceCollected)}</td>
+                        <td className="p-2 text-right">{formatCurrency(row.totalCashOutflows)}</td>
+                        <td className="p-2 text-right">{formatCurrency(row.closingBalance)}</td>
+                      </tr>
+                    ))}
+                    {financialModelData.length > 10 && (
+                      <tr className="border-b">
+                        <td className="p-2 text-center text-gray-500" colSpan={4}>
+                          ... and {financialModelData.length - 10} more years
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Comprehensive Simulation Chart */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Comprehensive Simulation Analysis</CardTitle>
+              <CardDescription>
+                Complete financial projection with all key metrics and cash flows
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="h-96">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={cashFlowData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis 
+                      dataKey="year" 
+                      tick={{ fontSize: 12 }}
+                      tickFormatter={(value) => `${value}`}
+                    />
+                    <YAxis 
+                      tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`}
+                      tick={{ fontSize: 12 }}
+                    />
+                    <Tooltip 
+                      formatter={(value: number, name: string) => [
+                        formatCurrency(value), 
+                        name === 'balance' ? 'Reserve Fund Cash' :
+                        name === 'totalMaintenanceCollected' ? 'Collections' :
+                        name === 'totalCashOutflows' ? 'Total Expenses' :
+                        name === 'futureExpenses' ? 'Future Expenses' :
+                        name === 'baseMaintenance' ? 'Base Maintenance' :
+                        name === 'loanRepayments' ? 'Loan Payments' :
+                        name === 'deficit' ? 'Deficit' : name
+                      ]}
+                      labelFormatter={(label) => `Year ${label}`}
+                      contentStyle={{ 
+                        backgroundColor: '#f8fafc', 
+                        border: '1px solid #e2e8f0',
+                        borderRadius: '6px'
+                      }}
+                    />
+                    
+                    {/* Collections - Yellow bars */}
+                    <Bar 
+                      dataKey="totalMaintenanceCollected" 
+                      fill="#fbbf24" 
+                      fillOpacity={0.7}
+                      name="totalMaintenanceCollected"
+                    />
+                    
+                    {/* Deficit bars - Red bars for negative balance */}
+                    <Bar 
+                      dataKey="deficit" 
+                      fill="#ef4444" 
+                      fillOpacity={0.8}
+                      name="deficit"
+                    />
+                    
+                    {/* Reserve Fund Cash - Blue line */}
+                    <Line 
+                      type="monotone" 
+                      dataKey="balance" 
+                      stroke="#3b82f6" 
+                      strokeWidth={3}
+                      dot={false}
+                      name="balance"
+                    />
+                    
+                    {/* Total Expenses - Red line */}
+                    <Line 
+                      type="monotone" 
+                      dataKey="totalCashOutflows" 
+                      stroke="#dc2626" 
+                      strokeWidth={2}
+                      dot={false}
+                      name="totalCashOutflows"
+                    />
+                    
+                    {/* Future Expenses - Purple line */}
+                    <Line 
+                      type="monotone" 
+                      dataKey="futureExpenses" 
+                      stroke="#8b5cf6" 
+                      strokeWidth={2}
+                      dot={false}
+                      name="futureExpenses"
+                    />
+                    
+                    {/* Base Maintenance - Green dashed line */}
+                    <Line 
+                      type="monotone" 
+                      dataKey="baseMaintenance" 
+                      stroke="#10b981" 
+                      strokeWidth={1}
+                      strokeDasharray="5 5"
+                      dot={false}
+                      name="baseMaintenance"
+                    />
+                    
+                    {/* Loan Payments - Gray line */}
+                    <Line 
+                      type="monotone" 
+                      dataKey="loanRepayments" 
+                      stroke="#6b7280" 
+                      strokeWidth={1}
+                      dot={false}
+                      name="loanRepayments"
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+              
+              {/* Legend */}
+              <div className="mt-4 grid grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-0.5 bg-blue-500" style={{ height: '3px' }}></div>
+                  <span>Reserve Fund Cash</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-0.5 bg-red-600"></div>
+                  <span>Total Expenses</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-3 bg-yellow-400 opacity-70"></div>
+                  <span>Collections</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-3 bg-red-500 opacity-80"></div>
+                  <span>Deficits</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-0.5 bg-purple-500"></div>
+                  <span>Future Expenses</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-0.5 bg-green-500 border-dashed border-b-2"></div>
+                  <span>Base Maintenance</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-0.5 bg-gray-500"></div>
+                  <span>Loan Payments</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Closing Balance Chart */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Closing Balance</CardTitle>
+              <CardDescription>
+                Reserve fund balance progression over the analysis period
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={balanceChartData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="year" />
+                    <YAxis tickFormatter={(value) => formatCurrency(value)} />
+                    <Tooltip 
+                      formatter={(value: number) => [formatCurrency(value), 'Closing Balance']}
+                      labelFormatter={(label) => `Year ${label}`}
+                    />
+                    <Line 
+                      type="monotone" 
+                      dataKey="balance" 
+                      stroke="#3b82f6" 
+                      strokeWidth={3}
+                      dot={{ fill: '#3b82f6', strokeWidth: 2, r: 4 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         <TabsContent value="overview" className="space-y-6">
           <Card>
@@ -269,14 +503,6 @@ export function SimulationResults({ model, modelItems, settings }: SimulationRes
                       stroke="#3b82f6" 
                       strokeWidth={2}
                       fill="url(#balanceGradient)" 
-                    />
-                    <Line 
-                      type="monotone" 
-                      dataKey="targetMinBalance" 
-                      stroke="#ef4444" 
-                      strokeDasharray="5 5"
-                      strokeWidth={2}
-                      dot={false}
                     />
                   </AreaChart>
                 </ResponsiveContainer>
@@ -346,9 +572,9 @@ export function SimulationResults({ model, modelItems, settings }: SimulationRes
         <TabsContent value="cash-flow" className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Annual Cash Flow</CardTitle>
+              <CardTitle>Annual Cash Flow Breakdown</CardTitle>
               <CardDescription>
-                Income vs expenses by year
+                Detailed breakdown of maintenance collections and cash outflows
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -361,12 +587,17 @@ export function SimulationResults({ model, modelItems, settings }: SimulationRes
                     <Tooltip 
                       formatter={(value: number, name: string) => [
                         formatCurrency(value), 
-                        name === 'income' ? 'Income' : name === 'expenses' ? 'Expenses' : 'Net Flow'
+                        name === 'totalMaintenanceCollected' ? 'Total Maintenance Collected' :
+                        name === 'baseMaintenance' ? 'Base Maintenance' :
+                        name === 'futureExpenses' ? 'Future Expenses' :
+                        name === 'loanRepayments' ? 'Loan Repayments' : name
                       ]}
                       labelFormatter={(label) => `Year ${label}`}
                     />
-                    <Bar dataKey="income" fill="#10b981" name="income" />
-                    <Bar dataKey="expenses" fill="#ef4444" name="expenses" />
+                    <Bar dataKey="totalMaintenanceCollected" fill="#10b981" name="totalMaintenanceCollected" />
+                    <Bar dataKey="baseMaintenance" fill="#3b82f6" name="baseMaintenance" />
+                    <Bar dataKey="futureExpenses" fill="#f59e0b" name="futureExpenses" />
+                    <Bar dataKey="loanRepayments" fill="#ef4444" name="loanRepayments" />
                   </BarChart>
                 </ResponsiveContainer>
               </div>

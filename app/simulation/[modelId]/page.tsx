@@ -39,15 +39,13 @@ export default function SimulationPage({ params }: SimulationPageProps) {
   const [simulationSettings, setSimulationSettings] = useState<{
     projectionYears: number;
     customInflationRate: number | null;
-    customMonthlyFees: number | null;
+    customBaseMaintenance: number | null;
     targetMinBalance: number;
-    includeInterest: boolean;
   }>({
     projectionYears: 30,
     customInflationRate: null,
-    customMonthlyFees: null,
+    customBaseMaintenance: null,
     targetMinBalance: 0,
-    includeInterest: true,
   });
 
   // Load model and related data
@@ -102,17 +100,12 @@ export default function SimulationPage({ params }: SimulationPageProps) {
   const handleSettingsChange = (newSettings: {
     projectionYears: number;
     customInflationRate: number | null;
-    customMonthlyFees: number | null;
+    customBaseMaintenance: number | null;
     targetMinBalance: number;
-    includeInterest: boolean;
   }) => {
     setSimulationSettings(newSettings);
   };
 
-  const handleRunSimulation = () => {
-    // Force re-render of simulation results
-    setShowSettings(false);
-  };
 
   if (!isInitialized || loading) {
     return (
@@ -168,10 +161,6 @@ export default function SimulationPage({ params }: SimulationPageProps) {
               <SettingsIcon className="h-4 w-4 mr-2" />
               Settings
             </Button>
-            <Button onClick={handleRunSimulation}>
-              <PlayIcon className="h-4 w-4 mr-2" />
-              Run Simulation
-            </Button>
           </div>
         </div>
 
@@ -193,7 +182,7 @@ export default function SimulationPage({ params }: SimulationPageProps) {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {formatCurrency(simulationSettings.customMonthlyFees || model.monthly_fees)}
+                {formatCurrency(simulationSettings.customBaseMaintenance || model.base_maintenance)}
               </div>
               <p className="text-sm text-gray-600">{model.housing} units</p>
             </CardContent>

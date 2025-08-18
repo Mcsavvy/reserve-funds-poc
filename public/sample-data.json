@@ -24,99 +24,59 @@
       "state": "CA",
       "active": true,
       "managedBy": "Premier Property Management"
-    },
-    {
-      "association": "Maple Ridge Community",
-      "company_type": "reserve",
-      "email": "admin@mapleridge.org",
-      "phone": "555-0145",
-      "address": "789 Maple Street",
-      "city": "Independent City",
-      "zip": "67890",
-      "state": "CA",
-      "active": true,
-      "managedBy": null
     }
   ],
   "models": [
     {
-      "name": "Sunset Gardens Reserve Study 2024",
+      "name": "Sunset Gardens Society Maintenance",
       "associationName": "Sunset Gardens HOA",
       "housing": 120,
-      "starting_amount": 75000,
-      "inflation_rate": 3.2,
-      "monthly_fees": 285,
-      "monthly_fees_rate": 2.5,
-      "cushion_fund": 15000,
+      "starting_amount": 0,
+      "inflation_rate": 5.0,
+      "base_maintenance": 120000,
+      "loan_threshold": 70.0,
+      "loan_rate": 10.0,
+      "loan_years": 5,
+      "safety_net_percentage": 10.0,
       "period": 30,
-      "bank_rate": 3.0,
-      "bank_int_rate": 2.0,
-      "loan_years": 30,
       "fiscal_year": "current",
-      "inv_strategy": "Conservative bond portfolio with capital preservation focus",
-      "active": true
-    },
-    {
-      "name": "Maple Ridge Capital Improvement Plan",
-      "associationName": "Maple Ridge Community",
-      "housing": 85,
-      "starting_amount": 45000,
-      "inflation_rate": 3.0,
-      "monthly_fees": 220,
-      "monthly_fees_rate": 2.0,
-      "cushion_fund": 8000,
-      "period": 25,
-      "bank_rate": 2.8,
-      "bank_int_rate": 1.8,
-      "loan_years": 25,
-      "fiscal_year": "current",
-      "inv_strategy": "Balanced investment approach with moderate growth",
+      "inv_strategy": "Conservative approach with focus on maintaining adequate reserves for large capital expenditures",
       "active": true
     }
   ],
   "modelItems": [
     {
-      "modelName": "Sunset Gardens Reserve Study 2024",
+      "modelName": "Sunset Gardens Society Maintenance",
       "items": [
         {
-          "name": "Roof Replacement - Main Building",
-          "redundancy": 1,
-          "remaining_life": 12,
-          "cost": 95000,
-          "is_sirs": true
+          "name": "Elevator modernisation",
+          "year": 3,
+          "cost": 50000,
+          "type": "Large"
         },
         {
-          "name": "Pool Equipment Replacement",
-          "redundancy": 1,
-          "remaining_life": 8,
-          "cost": 35000,
-          "is_sirs": false
+          "name": "Exterior painting",
+          "year": 5,
+          "cost": 20000,
+          "type": "Small"
         },
         {
-          "name": "Exterior Painting",
-          "redundancy": 1,
-          "remaining_life": 4,
-          "cost": 22000,
-          "is_sirs": false
-        }
-      ]
-    },
-    {
-      "modelName": "Maple Ridge Capital Improvement Plan",
-      "items": [
-        {
-          "name": "Asphalt Resurfacing",
-          "redundancy": 1,
-          "remaining_life": 6,
-          "cost": 45000,
-          "is_sirs": true
+          "name": "Roof replacement",
+          "year": 10,
+          "cost": 120000,
+          "type": "Large"
         },
         {
-          "name": "Playground Equipment",
-          "redundancy": 1,
-          "remaining_life": 10,
-          "cost": 18000,
-          "is_sirs": false
+          "name": "Generator overhaul",
+          "year": 15,
+          "cost": 30000,
+          "type": "Small"
+        },
+        {
+          "name": "Plumbing riser replacement",
+          "year": 22,
+          "cost": 80000,
+          "type": "Large"
         }
       ]
     }

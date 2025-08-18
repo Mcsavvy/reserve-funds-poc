@@ -133,10 +133,47 @@ export function useDatabase() {
     }
   }, [state.isInitialized, state.isInitializing, initialize]);
 
+  const clearAllData = useCallback(async () => {
+    try {
+      if (!databaseStateManager.isReady()) {
+        await databaseStateManager.initialize();
+      }
+      
+      // Clear all stores in the correct order (to avoid foreign key issues)
+      const storesToClear = [
+        DB_STORES.SIMULATION_ACTUAL,
+        DB_STORES.SIMULATION_SPLITS,
+        DB_STORES.SIMULATION_SPLITS_LTIM,
+        DB_STORES.SIMULATION_DEFICIT,
+        DB_STORES.SIMULATION_DEFICIT_LTIM,
+        DB_STORES.SIMULATION_RULES,
+        DB_STORES.SIMULATION_VERSIONS,
+        DB_STORES.MODEL_CLIENT_RATES,
+        DB_STORES.MODEL_ITEMS,
+        DB_STORES.MODELS,
+        DB_STORES.CLIENT_POSITIONS,
+        DB_STORES.CLIENTS,
+        DB_STORES.LTIM_INVESTMENT_RATES,
+        DB_STORES.CONFIG
+      ];
+
+      for (const storeName of storesToClear) {
+        await db.clear(storeName);
+      }
+
+      console.log('All data cleared successfully');
+      return true;
+    } catch (err) {
+      console.error('Failed to clear all data:', err);
+      throw err;
+    }
+  }, []);
+
   return { 
     isInitialized: state.isInitialized, 
     error: state.error,
-    initialize 
+    initialize,
+    clearAllData
   };
 }
 
@@ -329,8 +366,10 @@ export function useModels() {
   }, [ensureDbReady]);
 
   // Only allow models to be created for associations
-  const addModelForAssociation = useCallback(async (modelData: Omit<Model, 'id'> & Partial<Pick<Model, 'id'>>) => {
-    const client = clients.find(c => c.id === modelData.client_id);
+  const addModelForAssociation = useCallback(async (modelData: Omit<Model, 'id'> & Partial<Pick<Model, 'id'>>, client?: Client) => {
+    if (!client) {
+      client = clients.find(c => c.id === modelData.client_id);
+    }
     if (!client) {
       throw new Error('Client not found');
     }
@@ -572,13 +611,12 @@ interface SampleData {
     housing: number;
     starting_amount: number;
     inflation_rate: number;
-    monthly_fees: number;
-    monthly_fees_rate: number;
-    cushion_fund: number;
-    period: number;
-    bank_rate: number;
-    bank_int_rate: number;
+    base_maintenance: number;
+    loan_threshold: number;
+    loan_rate: number;
     loan_years: number;
+    safety_net_percentage: number;
+    period: number;
     fiscal_year: string;
     inv_strategy: string;
     active: boolean;
@@ -587,10 +625,9 @@ interface SampleData {
     modelName: string;
     items: Array<{
       name: string;
-      redundancy: number;
-      remaining_life: number;
+      year: number;
       cost: number;
-      is_sirs: boolean;
+      type: 'Large' | 'Small';
     }>;
   }>;
 }
@@ -601,6 +638,12 @@ export function useSampleData() {
   const { addItem: addAssociation } = useAssociations();
   const { addItem: addModel } = useModels();
   const { addItem: addModelItem } = useModelItems();
+
+  const ensureDbReady = useCallback(async () => {
+    if (!databaseStateManager.isReady()) {
+      await databaseStateManager.initialize();
+    }
+  }, []);
 
   const loadSampleData = useCallback(async (): Promise<SampleData> => {
     try {
@@ -669,19 +712,18 @@ export function useSampleData() {
           housing: modelData.housing,
           starting_amount: modelData.starting_amount,
           inflation_rate: modelData.inflation_rate,
-          monthly_fees: modelData.monthly_fees,
-          monthly_fees_rate: modelData.monthly_fees_rate,
-          cushion_fund: modelData.cushion_fund,
-          period: modelData.period,
-          bank_rate: modelData.bank_rate,
-          bank_int_rate: modelData.bank_int_rate,
+          base_maintenance: modelData.base_maintenance,
+          loan_threshold: modelData.loan_threshold,
+          loan_rate: modelData.loan_rate,
           loan_years: modelData.loan_years,
+          safety_net_percentage: modelData.safety_net_percentage,
+          period: modelData.period,
           fiscal_year: modelData.fiscal_year === 'current' ? currentYear : modelData.fiscal_year,
           inv_strategy: modelData.inv_strategy,
           active: modelData.active,
           updated_at: timestamp,
           created_at: timestamp,
-        });
+        }, association);
         createdModels.set(modelData.name, model);
       }
 
@@ -697,24 +739,64 @@ export function useSampleData() {
           await addModelItem({
             model_id: model.id,
             name: itemData.name,
-            redundancy: itemData.redundancy,
-            remaining_life: itemData.remaining_life,
+            year: itemData.year,
             cost: itemData.cost,
-            is_sirs: itemData.is_sirs,
+            type: itemData.type,
           });
         }
       }
 
-      return { 
+      const result = { 
         managementCompany: Array.from(createdCompanies.values())[0], 
         associations: Array.from(createdAssociations.values()),
         models: Array.from(createdModels.values())
       };
+
+      // Trigger page reload after successful sample data seeding
+      setTimeout(() => {
+        window.location.reload();
+      }, 1000); // Short delay to allow UI feedback
+
+      return result;
     } catch (err) {
       console.error('Failed to seed sample data:', err);
       throw err;
     }
   }, [addManagementCompany, addAssociation, addModel, addModelItem, loadSampleData]);
 
-  return { seedSampleData, loadSampleData };
+  const clearAllData = useCallback(async () => {
+    try {
+      await ensureDbReady();
+      
+      // Clear all stores in the correct order (to avoid foreign key issues)
+      const storesToClear = [
+        DB_STORES.SIMULATION_ACTUAL,
+        DB_STORES.SIMULATION_SPLITS,
+        DB_STORES.SIMULATION_SPLITS_LTIM,
+        DB_STORES.SIMULATION_DEFICIT,
+        DB_STORES.SIMULATION_DEFICIT_LTIM,
+        DB_STORES.SIMULATION_RULES,
+        DB_STORES.SIMULATION_VERSIONS,
+        DB_STORES.MODEL_CLIENT_RATES,
+        DB_STORES.MODEL_ITEMS,
+        DB_STORES.MODELS,
+        DB_STORES.CLIENT_POSITIONS,
+        DB_STORES.CLIENTS,
+        DB_STORES.LTIM_INVESTMENT_RATES,
+        DB_STORES.CONFIG
+      ];
+
+      for (const storeName of storesToClear) {
+        await db.clear(storeName);
+      }
+
+      console.log('All data cleared successfully');
+      return true;
+    } catch (err) {
+      console.error('Failed to clear all data:', err);
+      throw err;
+    }
+  }, [ensureDbReady]);
+
+  return { seedSampleData, loadSampleData, clearAllData };
 }

@@ -15,9 +15,8 @@ import { formatCurrency } from '@/lib/reserve-calculations';
 type SimulationSettings = {
   projectionYears: number;
   customInflationRate: number | null;
-  customMonthlyFees: number | null;
+  customBaseMaintenance: number | null;
   targetMinBalance: number;
-  includeInterest: boolean;
 };
 
 interface SimulationSettingsProps {
@@ -49,16 +48,15 @@ export function SimulationSettings({
     const defaultSettings = {
       projectionYears: model.period || 30,
       customInflationRate: null,
-      customMonthlyFees: null,
+      customBaseMaintenance: null,
       targetMinBalance: 0,
-      includeInterest: true,
     };
     setLocalSettings(defaultSettings);
     onSettingsChange(defaultSettings);
   };
 
   const totalItems = modelItems.length;
-  const sirsItems = modelItems.filter(item => item.is_sirs).length;
+  const largeExpenses = modelItems.filter(item => item.type === 'Large').length;
 
   return (
     <Card className="h-fit">
@@ -116,18 +114,18 @@ export function SimulationSettings({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="customMonthlyFees">Monthly Fees ($)</Label>
+            <Label htmlFor="customBaseMaintenance">Base Maintenance (Annual $)</Label>
             <Input
-              id="customMonthlyFees"
+              id="customBaseMaintenance"
               type="number"
               min="0"
-              value={localSettings.customMonthlyFees || ''}
-              placeholder={model.monthly_fees.toString()}
-              onChange={(e) => handleInputChange('customMonthlyFees', 
+              value={localSettings.customBaseMaintenance || ''}
+              placeholder={model.base_maintenance.toString()}
+              onChange={(e) => handleInputChange('customBaseMaintenance', 
                 e.target.value ? parseFloat(e.target.value) : null)}
             />
             <p className="text-xs text-gray-500">
-              Default: {formatCurrency(model.monthly_fees)} • Leave empty to use model default
+              Default: {formatCurrency(model.base_maintenance)} • Leave empty to use model default
             </p>
           </div>
 
@@ -149,33 +147,12 @@ export function SimulationSettings({
 
         <Separator />
 
-        {/* Calculation Options */}
-        <div className="space-y-4">
-          <h4 className="font-medium text-sm">Calculation Options</h4>
-          
-          <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <Label htmlFor="includeInterest">Include Interest Income</Label>
-              <p className="text-xs text-gray-500">
-                Interest rate: {model.bank_int_rate}%
-              </p>
-            </div>
-            <Switch
-              id="includeInterest"
-              checked={localSettings.includeInterest}
-              onCheckedChange={(checked) => handleInputChange('includeInterest', checked)}
-            />
-          </div>
-        </div>
-
-        <Separator />
-
         {/* Model Summary */}
         <div className="space-y-3">
           <h4 className="font-medium text-sm">Model Summary</h4>
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
-              <span className="text-gray-600">Starting Balance:</span>
+              <span className="text-gray-600">Opening Balance:</span>
               <span className="font-medium">{formatCurrency(model.starting_amount)}</span>
             </div>
             <div className="flex justify-between">
@@ -183,12 +160,16 @@ export function SimulationSettings({
               <span className="font-medium">{model.housing}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-600">Cushion Fund:</span>
-              <span className="font-medium">{formatCurrency(model.cushion_fund)}</span>
+              <span className="text-gray-600">Base Maintenance:</span>
+              <span className="font-medium">{formatCurrency(model.base_maintenance)}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-600">Bank Rate:</span>
-              <span className="font-medium">{model.bank_rate}%</span>
+              <span className="text-gray-600">Loan Threshold:</span>
+              <span className="font-medium">{model.loan_threshold}%</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-600">Safety Net:</span>
+              <span className="font-medium">{model.safety_net_percentage}%</span>
             </div>
           </div>
         </div>
@@ -204,12 +185,12 @@ export function SimulationSettings({
               <Badge variant="outline">{totalItems}</Badge>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600">SIRS Items:</span>
-              <Badge variant="default">{sirsItems}</Badge>
+              <span className="text-sm text-gray-600">Large Expenses:</span>
+              <Badge variant="default">{largeExpenses}</Badge>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600">Regular Items:</span>
-              <Badge variant="secondary">{totalItems - sirsItems}</Badge>
+              <span className="text-sm text-gray-600">Small Expenses:</span>
+              <Badge variant="secondary">{totalItems - largeExpenses}</Badge>
             </div>
           </div>
         </div>

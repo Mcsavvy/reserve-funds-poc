@@ -44,15 +44,14 @@ export interface Model {
   name: string;
   client_id: string;
   housing: number;
-  starting_amount: number;
-  inflation_rate: number;
-  monthly_fees: number;
-  monthly_fees_rate: number;
-  cushion_fund: number;
-  period: number;
-  bank_rate: number;
-  bank_int_rate: number;
-  loan_years: number;
+  starting_amount: number; // Opening Balance
+  inflation_rate: number; // Inflation% (stored as decimal, e.g., 5% = 0.05)
+  base_maintenance: number; // Base maintenance amount (annual)
+  period: number; // Horizon - analysis period in years
+  loan_threshold: number; // Loan Threshold% (stored as decimal, e.g., 70% = 0.70)
+  loan_rate: number; // Loan Rate% (stored as decimal, e.g., 10% = 0.10)
+  loan_years: number; // Loan Term in years
+  safety_net_percentage: number; // Safety Net% (stored as decimal, e.g., 10% = 0.10)
   fiscal_year: string;
   inv_strategy: string;
   active: boolean;
@@ -64,11 +63,10 @@ export interface ModelItem {
   row?: number;
   id: string;
   model_id: string;
-  name: string;
-  redundancy: number;
-  remaining_life: number;
-  cost: number;
-  is_sirs: boolean;
+  name: string; // Description of the expense item
+  year: number; // Year when the expense will be incurred
+  cost: number; // Amount_USD_Today - cost in today's dollars
+  type: 'Large' | 'Small'; // Type of expense (determines loan eligibility)
 }
 
 export interface ModelClientRate {

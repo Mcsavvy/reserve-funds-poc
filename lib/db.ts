@@ -20,7 +20,7 @@ import {
 } from './db-types';
 
 const DB_NAME = 'ReserveFundsDB';
-const DB_VERSION = 2;
+const DB_VERSION = 4;
 
 class ReserveFundsDB {
   private db: IDBDatabase | null = null;
@@ -105,6 +105,21 @@ class ReserveFundsDB {
           ltimRatesStore.createIndex('bucket_name', 'bucket_name', { unique: false });
           ltimRatesStore.createIndex('active', 'active', { unique: false });
           ltimRatesStore.createIndex('state_bucket', ['state', 'bucket_name'], { unique: false });
+        }
+
+        // Version 3: Add year index to model_items for expense scheduling
+        if (oldVersion < 3) {
+          // Add year index to existing model_items store
+          const transaction = (event.target as IDBOpenDBRequest).transaction;
+          if (transaction) {
+            const itemStore = transaction.objectStore(DB_STORES.MODEL_ITEMS);
+            if (!itemStore.indexNames.contains('year')) {
+              itemStore.createIndex('year', 'year', { unique: false });
+            }
+            if (!itemStore.indexNames.contains('type')) {
+              itemStore.createIndex('type', 'type', { unique: false });
+            }
+          }
         }
       };
     });
@@ -216,6 +231,25 @@ class ReserveFundsDB {
 
   async getLtimRateByStateBucket(state: string, bucketName: string): Promise<LtimInvestmentRate[]> {
     return this.getByIndex<LtimInvestmentRate>(DB_STORES.LTIM_INVESTMENT_RATES, 'state_bucket', [state, bucketName]);
+  }
+
+  // ModelItem methods for expense scheduling
+  async getItemsByYear(year: number): Promise<ModelItem[]> {
+    return this.getByIndex<ModelItem>(DB_STORES.MODEL_ITEMS, 'year', year);
+  }
+
+  async getItemsByType(type: 'Large' | 'Small'): Promise<ModelItem[]> {
+    return this.getByIndex<ModelItem>(DB_STORES.MODEL_ITEMS, 'type', type);
+  }
+
+  async getItemsByModelAndYear(modelId: string, year: number): Promise<ModelItem[]> {
+    const allItems = await this.getItemsByModel(modelId);
+    return allItems.filter(item => item.year === year);
+  }
+
+  async getExpensesByYearRange(modelId: string, startYear: number, endYear: number): Promise<ModelItem[]> {
+    const allItems = await this.getItemsByModel(modelId);
+    return allItems.filter(item => item.year >= startYear && item.year <= endYear);
   }
 
   // Utility method to generate IDs

@@ -182,13 +182,16 @@ export function ModelsTable({
                 <p className="text-sm text-gray-600">{getAssociationName(model.client_id)}</p>
                 <div className="flex items-center space-x-4 mt-2">
                   <span className="text-sm">
-                    Starting: {formatCurrency(model.starting_amount)}
+                    Opening: {formatCurrency(model.starting_amount)}
                   </span>
                   <span className="text-sm">
-                    Monthly: {formatCurrency(model.monthly_fees)}
+                    Base Maintenance: {formatCurrency(model.base_maintenance)}
                   </span>
                   <span className="text-sm">
                     Units: {model.housing}
+                  </span>
+                  <span className="text-sm">
+                    Horizon: {model.period} years
                   </span>
                 </div>
               </div>
@@ -506,28 +509,22 @@ export function ModelItemsTable({
               <div className="flex-1">
                 <div className="flex items-center space-x-2 mb-1">
                   <h4 className="font-medium">{item.name}</h4>
-                  {item.is_sirs && (
-                    <Badge variant="destructive" className="text-xs">
-                      SIRS
-                    </Badge>
-                  )}
+                  <Badge variant={item.type === 'Large' ? 'destructive' : 'secondary'} className="text-xs">
+                    {item.type}
+                  </Badge>
                 </div>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-gray-600">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm text-gray-600">
                   <div>
                     <span className="font-medium">Cost: </span>
                     {formatCurrency(item.cost)}
                   </div>
                   <div>
-                    <span className="font-medium">Life: </span>
-                    {item.remaining_life} years
-                  </div>
-                  <div>
-                    <span className="font-medium">Redundancy: </span>
-                    {item.redundancy}
+                    <span className="font-medium">Year: </span>
+                    {item.year}
                   </div>
                   <div>
                     <span className="font-medium">Type: </span>
-                    {item.is_sirs ? 'SIRS' : 'Standard'}
+                    {item.type} {item.type === 'Large' ? '(Loan Eligible)' : '(Cash Only)'}
                   </div>
                 </div>
               </div>

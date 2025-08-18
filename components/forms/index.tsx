@@ -350,15 +350,14 @@ export function AddModelForm({ associations, onSuccess, onAdd }: {
     name: '',
     client_id: '',
     housing: 100,
-    starting_amount: 50000,
-    inflation_rate: 3.0,
-    monthly_fees: 250,
-    monthly_fees_rate: 2.0,
-    cushion_fund: 10000,
-    period: 30,
-    bank_rate: 2.5,
-    bank_int_rate: 1.5,
-    loan_years: 30,
+    starting_amount: 0, // Opening Balance
+    base_maintenance: 120000, // Base maintenance amount
+    inflation_rate: 5.0, // Annual inflation rate percentage
+    loan_threshold: 70.0, // Loan threshold percentage
+    loan_rate: 10.0, // Loan interest rate percentage
+    safety_net_percentage: 10.0, // Safety net percentage
+    period: 30, // Analysis horizon in years
+    loan_years: 5, // Loan term in years
     fiscal_year: new Date().getFullYear().toString(),
     inv_strategy: '',
   });
@@ -377,15 +376,14 @@ export function AddModelForm({ associations, onSuccess, onAdd }: {
         name: '',
         client_id: '',
         housing: 100,
-        starting_amount: 50000,
-        inflation_rate: 3.0,
-        monthly_fees: 250,
-        monthly_fees_rate: 2.0,
-        cushion_fund: 10000,
+        starting_amount: 0,
+        base_maintenance: 120000,
+        inflation_rate: 5.0,
+        loan_threshold: 70.0,
+        loan_rate: 10.0,
+        safety_net_percentage: 10.0,
         period: 30,
-        bank_rate: 2.5,
-        bank_int_rate: 1.5,
-        loan_years: 30,
+        loan_years: 5,
         fiscal_year: new Date().getFullYear().toString(),
         inv_strategy: '',
       });
@@ -450,7 +448,7 @@ export function AddModelForm({ associations, onSuccess, onAdd }: {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="starting_amount">Starting Amount ($)</Label>
+          <Label htmlFor="starting_amount">Opening Balance ($)</Label>
           <Input
             id="starting_amount"
             type="number"
@@ -459,55 +457,29 @@ export function AddModelForm({ associations, onSuccess, onAdd }: {
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="monthly_fees">Monthly Fees ($)</Label>
-            <Input
-              id="monthly_fees"
-              type="number"
-              value={formData.monthly_fees}
-              onChange={(e) => setFormData({ ...formData, monthly_fees: Number(e.target.value) })}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="inflation_rate">Inflation Rate (%)</Label>
-            <Input
-              id="inflation_rate"
-              type="number"
-              step="0.1"
-              value={formData.inflation_rate}
-              onChange={(e) => setFormData({ ...formData, inflation_rate: Number(e.target.value) })}
-            />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="bank_rate">Bank Rate (%)</Label>
-            <Input
-              id="bank_rate"
-              type="number"
-              step="0.1"
-              value={formData.bank_rate}
-              onChange={(e) => setFormData({ ...formData, bank_rate: Number(e.target.value) })}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="bank_int_rate">Interest Rate (%)</Label>
-            <Input
-              id="bank_int_rate"
-              type="number"
-              step="0.1"
-              value={formData.bank_int_rate}
-              onChange={(e) => setFormData({ ...formData, bank_int_rate: Number(e.target.value) })}
-            />
-          </div>
+        <div className="space-y-2">
+          <Label htmlFor="base_maintenance">Base Maintenance (Annual $)</Label>
+          <Input
+            id="base_maintenance"
+            type="number"
+            value={formData.base_maintenance}
+            onChange={(e) => setFormData({ ...formData, base_maintenance: Number(e.target.value) })}
+          />
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="period">Simulation Years</Label>
+          <Label htmlFor="inflation_rate">Inflation Rate (%)</Label>
+          <Input
+            id="inflation_rate"
+            type="number"
+            step="0.1"
+            value={formData.inflation_rate}
+            onChange={(e) => setFormData({ ...formData, inflation_rate: Number(e.target.value) })}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="period">Simulation Years (Horizon)</Label>
           <Input
             id="period"
             type="number"
@@ -520,6 +492,44 @@ export function AddModelForm({ associations, onSuccess, onAdd }: {
           <p className="text-xs text-gray-500">
             Specify how many years into the future to project reserve fund needs (typically 20-30 years)
           </p>
+        </div>
+
+        <div className="grid grid-cols-3 gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="loan_threshold">Loan Threshold (%)</Label>
+            <Input
+              id="loan_threshold"
+              type="number"
+              step="0.1"
+              value={formData.loan_threshold}
+              onChange={(e) => setFormData({ ...formData, loan_threshold: Number(e.target.value) })}
+            />
+            <p className="text-xs text-gray-500">Percentage for large expense loan eligibility</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="loan_rate">Loan Rate (%)</Label>
+            <Input
+              id="loan_rate"
+              type="number"
+              step="0.1"
+              value={formData.loan_rate}
+              onChange={(e) => setFormData({ ...formData, loan_rate: Number(e.target.value) })}
+            />
+            <p className="text-xs text-gray-500">Annual interest rate for loans</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="safety_net_percentage">Safety Net (%)</Label>
+            <Input
+              id="safety_net_percentage"
+              type="number"
+              step="0.1"
+              value={formData.safety_net_percentage}
+              onChange={(e) => setFormData({ ...formData, safety_net_percentage: Number(e.target.value) })}
+            />
+            <p className="text-xs text-gray-500">Emergency cushion percentage</p>
+          </div>
         </div>
 
         <div className="space-y-2">
@@ -811,13 +821,12 @@ export function EditModelForm({ model, associations, onSuccess, onUpdate }: {
     client_id: model.client_id,
     housing: model.housing,
     starting_amount: model.starting_amount,
+    base_maintenance: model.base_maintenance || 120000,
     inflation_rate: model.inflation_rate,
-    monthly_fees: model.monthly_fees,
-    monthly_fees_rate: model.monthly_fees_rate,
-    cushion_fund: model.cushion_fund,
+    loan_threshold: model.loan_threshold || 70.0,
+    loan_rate: model.loan_rate || 10.0,
+    safety_net_percentage: model.safety_net_percentage || 10.0,
     period: model.period,
-    bank_rate: model.bank_rate,
-    bank_int_rate: model.bank_int_rate,
     loan_years: model.loan_years,
     fiscal_year: model.fiscal_year,
     inv_strategy: model.inv_strategy,
@@ -893,7 +902,7 @@ export function EditModelForm({ model, associations, onSuccess, onUpdate }: {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="edit-model-starting_amount">Starting Amount ($)</Label>
+          <Label htmlFor="edit-model-starting_amount">Opening Balance ($)</Label>
           <Input
             id="edit-model-starting_amount"
             type="number"
@@ -902,55 +911,29 @@ export function EditModelForm({ model, associations, onSuccess, onUpdate }: {
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="edit-model-monthly_fees">Monthly Fees ($)</Label>
-            <Input
-              id="edit-model-monthly_fees"
-              type="number"
-              value={formData.monthly_fees}
-              onChange={(e) => setFormData({ ...formData, monthly_fees: Number(e.target.value) })}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="edit-model-inflation_rate">Inflation Rate (%)</Label>
-            <Input
-              id="edit-model-inflation_rate"
-              type="number"
-              step="0.1"
-              value={formData.inflation_rate}
-              onChange={(e) => setFormData({ ...formData, inflation_rate: Number(e.target.value) })}
-            />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="edit-model-bank_rate">Bank Rate (%)</Label>
-            <Input
-              id="edit-model-bank_rate"
-              type="number"
-              step="0.1"
-              value={formData.bank_rate}
-              onChange={(e) => setFormData({ ...formData, bank_rate: Number(e.target.value) })}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="edit-model-bank_int_rate">Interest Rate (%)</Label>
-            <Input
-              id="edit-model-bank_int_rate"
-              type="number"
-              step="0.1"
-              value={formData.bank_int_rate}
-              onChange={(e) => setFormData({ ...formData, bank_int_rate: Number(e.target.value) })}
-            />
-          </div>
+        <div className="space-y-2">
+          <Label htmlFor="edit-model-base_maintenance">Base Maintenance (Annual $)</Label>
+          <Input
+            id="edit-model-base_maintenance"
+            type="number"
+            value={formData.base_maintenance}
+            onChange={(e) => setFormData({ ...formData, base_maintenance: Number(e.target.value) })}
+          />
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="edit-model-period">Simulation Years</Label>
+          <Label htmlFor="edit-model-inflation_rate">Inflation Rate (%)</Label>
+          <Input
+            id="edit-model-inflation_rate"
+            type="number"
+            step="0.1"
+            value={formData.inflation_rate}
+            onChange={(e) => setFormData({ ...formData, inflation_rate: Number(e.target.value) })}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="edit-model-period">Simulation Years (Horizon)</Label>
           <Input
             id="edit-model-period"
             type="number"
@@ -963,6 +946,44 @@ export function EditModelForm({ model, associations, onSuccess, onUpdate }: {
           <p className="text-xs text-gray-500">
             Specify how many years into the future to project reserve fund needs (typically 20-30 years)
           </p>
+        </div>
+
+        <div className="grid grid-cols-3 gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="edit-model-loan_threshold">Loan Threshold (%)</Label>
+            <Input
+              id="edit-model-loan_threshold"
+              type="number"
+              step="0.1"
+              value={formData.loan_threshold}
+              onChange={(e) => setFormData({ ...formData, loan_threshold: Number(e.target.value) })}
+            />
+            <p className="text-xs text-gray-500">Percentage for large expense loan eligibility</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="edit-model-loan_rate">Loan Rate (%)</Label>
+            <Input
+              id="edit-model-loan_rate"
+              type="number"
+              step="0.1"
+              value={formData.loan_rate}
+              onChange={(e) => setFormData({ ...formData, loan_rate: Number(e.target.value) })}
+            />
+            <p className="text-xs text-gray-500">Annual interest rate for loans</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="edit-model-safety_net_percentage">Safety Net (%)</Label>
+            <Input
+              id="edit-model-safety_net_percentage"
+              type="number"
+              step="0.1"
+              value={formData.safety_net_percentage}
+              onChange={(e) => setFormData({ ...formData, safety_net_percentage: Number(e.target.value) })}
+            />
+            <p className="text-xs text-gray-500">Emergency cushion percentage</p>
+          </div>
         </div>
 
         <div className="space-y-2">
@@ -1094,10 +1115,9 @@ export function AddModelItemForm({ onSuccess, onAdd, modelId }: {
 }) {
   const [formData, setFormData] = useState({
     name: '',
-    redundancy: 1,
-    remaining_life: 10,
-    cost: 5000,
-    is_sirs: false,
+    year: 1, // Year when expense will be incurred
+    cost: 5000, // Amount in today's dollars
+    type: 'Small' as 'Large' | 'Small', // Type of expense
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -1110,10 +1130,9 @@ export function AddModelItemForm({ onSuccess, onAdd, modelId }: {
       onSuccess();
       setFormData({
         name: '',
-        redundancy: 1,
-        remaining_life: 10,
+        year: 1,
         cost: 5000,
-        is_sirs: false,
+        type: 'Small' as 'Large' | 'Small',
       });
     } catch (error) {
       console.error('Failed to add model item:', error);
@@ -1129,19 +1148,33 @@ export function AddModelItemForm({ onSuccess, onAdd, modelId }: {
       
       <form onSubmit={handleSubmit} className="space-y-4 mt-6">
         <div className="space-y-2">
-          <Label htmlFor="item-name">Item Name *</Label>
+          <Label htmlFor="item-name">Expense Description *</Label>
           <Input
             id="item-name"
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            placeholder="e.g., Roof Replacement, Pool Equipment, HVAC System"
+            placeholder="e.g., Elevator modernisation, Roof replacement, Generator overhaul"
             required
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-3 gap-4">
           <div className="space-y-2">
-            <Label htmlFor="item-cost">Replacement Cost ($) *</Label>
+            <Label htmlFor="item-year">Year *</Label>
+            <Input
+              id="item-year"
+              type="number"
+              min="1"
+              max="50"
+              value={formData.year}
+              onChange={(e) => setFormData({ ...formData, year: Number(e.target.value) })}
+              required
+            />
+            <p className="text-xs text-gray-500">Year when expense will be incurred</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="item-cost">Cost (Today's $) *</Label>
             <Input
               id="item-cost"
               type="number"
@@ -1151,50 +1184,25 @@ export function AddModelItemForm({ onSuccess, onAdd, modelId }: {
               onChange={(e) => setFormData({ ...formData, cost: Number(e.target.value) })}
               required
             />
+            <p className="text-xs text-gray-500">Amount in current dollars</p>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="item-life">Remaining Life (years) *</Label>
-            <Input
-              id="item-life"
-              type="number"
-              min="1"
-              max="100"
-              value={formData.remaining_life}
-              onChange={(e) => setFormData({ ...formData, remaining_life: Number(e.target.value) })}
-              required
-            />
+            <Label htmlFor="item-type">Type *</Label>
+            <Select value={formData.type} onValueChange={(value: 'Large' | 'Small') => setFormData({ ...formData, type: value })}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Large">Large</SelectItem>
+                <SelectItem value="Small">Small</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-gray-500">Large expenses are eligible for loans</p>
           </div>
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="item-redundancy">Redundancy Factor</Label>
-          <Input
-            id="item-redundancy"
-            type="number"
-            min="1"
-            max="10"
-            value={formData.redundancy}
-            onChange={(e) => setFormData({ ...formData, redundancy: Number(e.target.value) })}
-          />
-          <p className="text-xs text-gray-500">
-            Number of replacement cycles expected during the model period
-          </p>
-        </div>
 
-        <div className="flex items-center space-x-2">
-          <input
-            type="checkbox"
-            id="item-sirs"
-            checked={formData.is_sirs}
-            onChange={(e) => setFormData({ ...formData, is_sirs: e.target.checked })}
-            className="rounded"
-          />
-          <Label htmlFor="item-sirs">SIRS (Structural/Important) Item</Label>
-        </div>
-        <p className="text-xs text-gray-500 -mt-2">
-          Check if this is a structural or important item requiring priority funding
-        </p>
 
         <Button type="submit" className="w-full">
           Add Model Item
@@ -1212,10 +1220,9 @@ export function EditModelItemForm({ modelItem, onSuccess, onUpdate }: {
 }) {
   const [formData, setFormData] = useState({
     name: modelItem.name,
-    redundancy: modelItem.redundancy,
-    remaining_life: modelItem.remaining_life,
+    year: modelItem.year || 1,
     cost: modelItem.cost,
-    is_sirs: modelItem.is_sirs,
+    type: modelItem.type || 'Small' as 'Large' | 'Small',
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -1240,19 +1247,33 @@ export function EditModelItemForm({ modelItem, onSuccess, onUpdate }: {
       
       <form onSubmit={handleSubmit} className="space-y-4 mt-6">
         <div className="space-y-2">
-          <Label htmlFor="edit-item-name">Item Name *</Label>
+          <Label htmlFor="edit-item-name">Expense Description *</Label>
           <Input
             id="edit-item-name"
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            placeholder="e.g., Roof Replacement, Pool Equipment, HVAC System"
+            placeholder="e.g., Elevator modernisation, Roof replacement, Generator overhaul"
             required
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-3 gap-4">
           <div className="space-y-2">
-            <Label htmlFor="edit-item-cost">Replacement Cost ($) *</Label>
+            <Label htmlFor="edit-item-year">Year *</Label>
+            <Input
+              id="edit-item-year"
+              type="number"
+              min="1"
+              max="50"
+              value={formData.year}
+              onChange={(e) => setFormData({ ...formData, year: Number(e.target.value) })}
+              required
+            />
+            <p className="text-xs text-gray-500">Year when expense will be incurred</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="edit-item-cost">Cost (Today's $) *</Label>
             <Input
               id="edit-item-cost"
               type="number"
@@ -1262,50 +1283,25 @@ export function EditModelItemForm({ modelItem, onSuccess, onUpdate }: {
               onChange={(e) => setFormData({ ...formData, cost: Number(e.target.value) })}
               required
             />
+            <p className="text-xs text-gray-500">Amount in current dollars</p>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="edit-item-life">Remaining Life (years) *</Label>
-            <Input
-              id="edit-item-life"
-              type="number"
-              min="1"
-              max="100"
-              value={formData.remaining_life}
-              onChange={(e) => setFormData({ ...formData, remaining_life: Number(e.target.value) })}
-              required
-            />
+            <Label htmlFor="edit-item-type">Type *</Label>
+            <Select value={formData.type} onValueChange={(value: 'Large' | 'Small') => setFormData({ ...formData, type: value })}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Large">Large</SelectItem>
+                <SelectItem value="Small">Small</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-gray-500">Large expenses are eligible for loans</p>
           </div>
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="edit-item-redundancy">Redundancy Factor</Label>
-          <Input
-            id="edit-item-redundancy"
-            type="number"
-            min="1"
-            max="10"
-            value={formData.redundancy}
-            onChange={(e) => setFormData({ ...formData, redundancy: Number(e.target.value) })}
-          />
-          <p className="text-xs text-gray-500">
-            Number of replacement cycles expected during the model period
-          </p>
-        </div>
 
-        <div className="flex items-center space-x-2">
-          <input
-            type="checkbox"
-            id="edit-item-sirs"
-            checked={formData.is_sirs}
-            onChange={(e) => setFormData({ ...formData, is_sirs: e.target.checked })}
-            className="rounded"
-          />
-          <Label htmlFor="edit-item-sirs">SIRS (Structural/Important) Item</Label>
-        </div>
-        <p className="text-xs text-gray-500 -mt-2">
-          Check if this is a structural or important item requiring priority funding
-        </p>
 
         <Button type="submit" className="w-full">
           Update Model Item
@@ -1435,3 +1431,5 @@ export function EditLtimRateForm({ ltimRate, onSuccess, onUpdate }: {
     </>
   );
 }
+
+

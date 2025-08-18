@@ -1,19 +1,25 @@
-// Reserve fund calculation utilities
+// Reserve fund calculation utilities using financial model formulas
 
 import { Model, ModelItem } from './db-types';
 
 export interface ReserveProjection {
   year: number;
-  startingBalance: number;
-  income: number;
-  expenses: number;
-  endingBalance: number;
-  cumulativeExpenses: number;
+  openingBalance: number;
+  baseMaintenance: number;
+  futureExpenses: number;
+  reserveContribution: number;
+  loanRepayments: number;
+  collectionsWithoutSafetyNet: number;
+  provisionalEndBalance: number;
+  safetyNetTarget: number;
+  safetyNetTopUp: number;
+  totalMaintenanceCollected: number;
+  closingBalance: number;
   items: {
     id: string;
     name: string;
     cost: number;
-    replacementYear: number;
+    type: 'Large' | 'Small';
   }[];
 }
 
@@ -29,7 +35,7 @@ export interface ReserveSummary {
 }
 
 /**
- * Calculate reserve fund projections over time
+ * Calculate reserve fund projections using financial model formulas
  */
 export function calculateReserveProjections(
   model: Model,
@@ -39,99 +45,118 @@ export function calculateReserveProjections(
   const projections: ReserveProjection[] = [];
   const currentYear = parseInt(model.fiscal_year);
   
-  let runningBalance = model.starting_amount;
-  let cumulativeExpenses = 0;
+  let openingBalance = model.starting_amount;
 
-  for (let year = 0; year < projectionYears; year++) {
-    const projectionYear = currentYear + year;
-    const startingBalance = runningBalance;
+  for (let year = 1; year <= projectionYears; year++) {
+    const projectionYear = currentYear + year - 1;
     
-    // Calculate income (monthly fees * 12 months, adjusted for inflation)
-    const inflationMultiplier = Math.pow(1 + model.inflation_rate / 100, year);
-    const annualIncome = (model.monthly_fees * 12) * inflationMultiplier;
+    // 1. Base Maintenance (inflated) = Base * POWER(1+inflation%, year-1)
+    const baseMaintenance = model.base_maintenance * Math.pow(1 + model.inflation_rate / 100, year - 1);
     
-    // Add interest from bank
-    const interestIncome = startingBalance * (model.bank_int_rate / 100);
-    const totalIncome = annualIncome + interestIncome;
+    // 2. Future Expenses in Year (inflated) - get expenses for this specific year
+    const yearExpenses = items.filter(item => item.year === year);
+    const futureExpenses = yearExpenses.reduce((sum, item) => {
+      return sum + (item.cost * Math.pow(1 + model.inflation_rate / 100, year - 1));
+    }, 0);
     
-    // Calculate expenses for this year
-    const yearlyExpenses: { id: string; name: string; cost: number; replacementYear: number }[] = [];
-    let totalExpenses = 0;
-
-    items.forEach(item => {
-      const replacementYear = currentYear + item.remaining_life;
-      
-      // Check if this item needs replacement in this year
-      if (replacementYear === projectionYear) {
-        const inflatedCost = item.cost * inflationMultiplier;
-        yearlyExpenses.push({
-          id: item.id,
-          name: item.name,
-          cost: inflatedCost,
-          replacementYear: projectionYear,
-        });
-        totalExpenses += inflatedCost;
-      }
-      
-      // Check for recurring expenses (redundancy > 1)
-      if (item.redundancy > 1) {
-        const intervalYears = Math.floor(item.remaining_life / item.redundancy);
-        for (let i = 1; i <= item.redundancy; i++) {
-          const nextReplacementYear = replacementYear + (intervalYears * i);
-          if (nextReplacementYear === projectionYear) {
-            const inflatedCost = item.cost * Math.pow(1 + model.inflation_rate / 100, year + (intervalYears * i));
-            yearlyExpenses.push({
-              id: `${item.id}_${i}`,
-              name: `${item.name} (Cycle ${i + 1})`,
-              cost: inflatedCost,
-              replacementYear: nextReplacementYear,
-            });
-            totalExpenses += inflatedCost;
-          }
-        }
-      }
-    });
-
-    cumulativeExpenses += totalExpenses;
-    const endingBalance = startingBalance + totalIncome - totalExpenses;
-
+    // 3. Reserve Contribution calculation (simplified for now)
+    // This involves complex logic for future expenses distribution
+    const futureExpensesTotal = items
+      .filter(item => item.year > year)
+      .reduce((sum, item) => {
+        return sum + (item.cost * Math.pow(1 + model.inflation_rate / 100, item.year - 1) * 
+          (item.type === 'Large' ? model.loan_threshold / 100 : 1));
+      }, 0);
+    
+    const remainingYears = Math.max(projectionYears - year, 1);
+    const reserveContribution = futureExpensesTotal / remainingYears;
+    
+    // 4. Loan Repayments (simplified - assumes loans for large expenses)
+    const largeExpenses = yearExpenses.filter(item => item.type === 'Large');
+    const loanAmount = largeExpenses.reduce((sum, item) => {
+      const inflatedCost = item.cost * Math.pow(1 + model.inflation_rate / 100, year - 1);
+      return sum + (inflatedCost * (1 - model.loan_threshold / 100));
+    }, 0);
+    
+    // PMT calculation for loan repayments (if there were loans in previous years)
+    const loanRepayments = loanAmount > 0 ? 
+      calculatePMT(model.loan_rate / 100, model.loan_years, loanAmount) : 0;
+    
+    // 5. Collections w/o Safety Net
+    const collectionsWithoutSafetyNet = baseMaintenance + reserveContribution + loanRepayments;
+    
+    // 6. Provisional End Balance
+    const provisionalEndBalance = openingBalance + collectionsWithoutSafetyNet - baseMaintenance - futureExpenses - loanRepayments;
+    
+    // 7. Safety Net Target = Safety Net % * (Base Maintenance + Future Expenses + Loan Repayments)
+    const safetyNetTarget = (model.safety_net_percentage / 100) * (baseMaintenance + futureExpenses + loanRepayments);
+    
+    // 8. Safety Net Top-Up = MAX(0, Safety Net Target - Provisional End Balance)
+    const safetyNetTopUp = Math.max(0, safetyNetTarget - provisionalEndBalance);
+    
+    // 9. Total Maintenance Collected = Collections w/o Safety Net + Safety Net Top-Up
+    const totalMaintenanceCollected = collectionsWithoutSafetyNet + safetyNetTopUp;
+    
+    // 10. Closing Balance = Opening Balance + Total Maintenance Collected - Base Maintenance - Future Expenses - Loan Repayments
+    const closingBalance = openingBalance + totalMaintenanceCollected - baseMaintenance - futureExpenses - loanRepayments;
+    
     projections.push({
       year: projectionYear,
-      startingBalance,
-      income: totalIncome,
-      expenses: totalExpenses,
-      endingBalance,
-      cumulativeExpenses,
-      items: yearlyExpenses,
+      openingBalance,
+      baseMaintenance,
+      futureExpenses,
+      reserveContribution,
+      loanRepayments,
+      collectionsWithoutSafetyNet,
+      provisionalEndBalance,
+      safetyNetTarget,
+      safetyNetTopUp,
+      totalMaintenanceCollected,
+      closingBalance,
+      items: yearExpenses.map(item => ({
+        id: item.id,
+        name: item.name,
+        cost: item.cost * Math.pow(1 + model.inflation_rate / 100, year - 1),
+        type: item.type,
+      })),
     });
 
-    runningBalance = endingBalance;
+    // Set opening balance for next year
+    openingBalance = closingBalance;
   }
 
   return projections;
 }
 
 /**
+ * Calculate PMT (loan payment) using the standard financial formula
+ */
+function calculatePMT(rate: number, nper: number, pv: number): number {
+  if (rate === 0) return pv / nper;
+  return (pv * rate * Math.pow(1 + rate, nper)) / (Math.pow(1 + rate, nper) - 1);
+}
+
+/**
  * Generate summary statistics from projections
  */
 export function generateReserveSummary(projections: ReserveProjection[]): ReserveSummary {
-  const totalIncome = projections.reduce((sum, p) => sum + p.income, 0);
-  const totalExpenses = projections.reduce((sum, p) => sum + p.expenses, 0);
-  const finalBalance = projections[projections.length - 1]?.endingBalance ?? 0;
+  const totalIncome = projections.reduce((sum, p) => sum + p.totalMaintenanceCollected, 0);
+  const totalExpenses = projections.reduce((sum, p) => sum + p.baseMaintenance + p.futureExpenses, 0);
+  const finalBalance = projections[projections.length - 1]?.closingBalance ?? 0;
   
   // Find minimum balance and year
   let minBalance = Number.MAX_VALUE;
   let minBalanceYear = 0;
   
   projections.forEach(p => {
-    if (p.endingBalance < minBalance) {
-      minBalance = p.endingBalance;
+    if (p.closingBalance < minBalance) {
+      minBalance = p.closingBalance;
       minBalanceYear = p.year;
     }
   });
 
   // Calculate average balance
-  const averageBalance = projections.reduce((sum, p) => sum + p.endingBalance, 0) / projections.length;
+  const averageBalance = projections.reduce((sum, p) => sum + p.closingBalance, 0) / projections.length;
 
   // Check if loan is needed (any negative balance)
   const needsLoan = minBalance < 0;
@@ -150,7 +175,7 @@ export function generateReserveSummary(projections: ReserveProjection[]): Reserv
 }
 
 /**
- * Calculate required monthly contribution to maintain positive balance
+ * Calculate required contribution to maintain positive balance
  */
 export function calculateRequiredContribution(
   model: Model,
@@ -158,32 +183,38 @@ export function calculateRequiredContribution(
   targetMinBalance: number = 0,
   projectionYears: number = 30
 ): number {
-  let lowGuess = 0;
-  let highGuess = model.monthly_fees * 5; // Start with 5x current fees as upper bound
-  let bestGuess = model.monthly_fees;
+  // Simplified implementation - would need more complex logic for full financial model
+  const projections = calculateReserveProjections(model, items, projectionYears);
+  const summary = generateReserveSummary(projections);
   
-  const tolerance = 10; // $10 tolerance
-  const maxIterations = 20;
-  
-  for (let i = 0; i < maxIterations; i++) {
-    const testModel = { ...model, monthly_fees: bestGuess };
-    const projections = calculateReserveProjections(testModel, items, projectionYears);
-    const summary = generateReserveSummary(projections);
-    
-    if (Math.abs(summary.minBalance - targetMinBalance) < tolerance) {
-      break;
-    }
-    
-    if (summary.minBalance < targetMinBalance) {
-      lowGuess = bestGuess;
-      bestGuess = (bestGuess + highGuess) / 2;
-    } else {
-      highGuess = bestGuess;
-      bestGuess = (lowGuess + bestGuess) / 2;
-    }
+  if (summary.minBalance >= targetMinBalance) {
+    return model.base_maintenance;
   }
   
-  return Math.round(bestGuess);
+  // Calculate additional contribution needed
+  const deficit = targetMinBalance - summary.minBalance;
+  return model.base_maintenance + (deficit / projectionYears);
+}
+
+/**
+ * Calculate contribution adequacy percentage
+ */
+export function calculateContributionAdequacy(
+  model: Model,
+  items: ModelItem[],
+  projectionYears: number = 30
+): number {
+  const projections = calculateReserveProjections(model, items, projectionYears);
+  const summary = generateReserveSummary(projections);
+  
+  if (summary.minBalance >= 0) {
+    return 100; // Fully adequate
+  }
+  
+  // Calculate adequacy as percentage
+  const totalRequired = summary.totalExpenses;
+  const totalAvailable = summary.totalIncome;
+  return Math.max(0, (totalAvailable / totalRequired) * 100);
 }
 
 /**
@@ -198,44 +229,12 @@ export function calculateInflatedCost(
 }
 
 /**
- * Calculate present value of future cost
- */
-export function calculatePresentValue(
-  futureCost: number,
-  discountRate: number,
-  years: number
-): number {
-  return futureCost / Math.pow(1 + discountRate / 100, years);
-}
-
-/**
- * Calculate contribution adequacy percentage
- */
-export function calculateContributionAdequacy(
-  model: Model,
-  items: ModelItem[],
-  projectionYears: number = 30
-): number {
-  const projections = calculateReserveProjections(model, items, projectionYears);
-  const summary = generateReserveSummary(projections);
-  
-  // If there's a deficit, calculate how much additional contribution is needed
-  if (summary.needsLoan) {
-    const requiredContribution = calculateRequiredContribution(model, items, 0, projectionYears);
-    return (model.monthly_fees / requiredContribution) * 100;
-  }
-  
-  // If there's no deficit, we're at 100% or higher adequacy
-  return 100;
-}
-
-/**
  * Format currency values
  */
-export function formatCurrency(amount: number, currency: string = 'USD'): string {
+export function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
-    currency: currency,
+    currency: 'USD',
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(amount);
@@ -244,6 +243,6 @@ export function formatCurrency(amount: number, currency: string = 'USD'): string
 /**
  * Format percentage values
  */
-export function formatPercentage(value: number, decimals: number = 1): string {
-  return `${value.toFixed(decimals)}%`;
+export function formatPercentage(value: number): string {
+  return `${value.toFixed(1)}%`;
 }

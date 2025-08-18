@@ -13,7 +13,7 @@ import { DataTables } from './data-tables';
 
 export function Dashboard() {
   const router = useRouter();
-  const { isInitialized, error } = useDatabase();
+  const { isInitialized, error, clearAllData } = useDatabase();
   
   // Separate hooks for different entity types
   const { items: managementCompanies, addItem: addManagementCompany, updateItem: updateManagementCompany, deleteItem: deleteManagementCompany, loading: companiesLoading } = useManagementCompanies();
@@ -84,6 +84,20 @@ export function Dashboard() {
     router.push(`/simulation/${model.id}`);
   };
 
+  const handleClearAllData = async () => {
+    if (window.confirm('Are you sure you want to clear ALL data? This action cannot be undone and will remove all management companies, associations, models, and settings.')) {
+      try {
+        await clearAllData();
+        alert('All data has been cleared successfully.');
+        // Trigger a page reload to refresh all components
+        window.location.reload();
+      } catch (error) {
+        console.error('Failed to clear all data:', error);
+        alert('Failed to clear all data. Please try again.');
+      }
+    }
+  };
+
   if (!isInitialized) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -115,6 +129,7 @@ export function Dashboard() {
             onAddAssociation={addAssociation}
             onAddModel={addModel}
             onSeedSampleData={seedSampleData}
+            onClearAllData={handleClearAllData}
           />
 
           <RecentActivity models={models} />
