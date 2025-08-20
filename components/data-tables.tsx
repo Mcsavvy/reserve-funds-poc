@@ -3,36 +3,37 @@
 import { useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
-import { ManagementCompany, Association, Model, LtimInvestmentRate } from '@/lib/db-types';
-import { ManagementCompaniesTable, AssociationsTable, ModelsTable, LtimInvestmentRatesTable } from './tables';
-import { EditManagementCompanyForm, EditAssociationForm, EditModelForm, AddLtimRateForm, EditLtimRateForm } from './forms';
+import { ManagementCompany, Association, Model, LtimStrategy } from '@/lib/db-types';
+import { ManagementCompaniesTable, AssociationsTable, ModelsTable } from './tables';
+import { LtimStrategiesTable } from './tables/ltim-strategies-table';
+import { EditManagementCompanyForm, EditAssociationForm, EditModelForm, AddLtimStrategyForm, EditLtimStrategyForm } from './forms';
 import { ModelItemsManager } from './model-items-manager';
 
 interface DataTablesProps {
   managementCompanies: ManagementCompany[];
   associations: Association[];
   models: Model[];
-  ltimRates: LtimInvestmentRate[];
+  ltimStrategies: LtimStrategy[];
   loading: {
     companies: boolean;
     associations: boolean;
     models: boolean;
-    ltimRates: boolean;
+    ltimStrategies: boolean;
   };
   onEditManagementCompany: (company: ManagementCompany) => void;
   onEditAssociation: (association: Association) => void;
   onEditModel: (model: Model) => void;
-  onEditLtimRate: (rate: LtimInvestmentRate) => void;
+  onEditLtimStrategy: (strategy: LtimStrategy) => void;
   onDeleteManagementCompany: (company: ManagementCompany) => void;
   onDeleteAssociation: (association: Association) => void;
   onDeleteModel: (model: Model) => void;
-  onDeleteLtimRate: (rate: LtimInvestmentRate) => void;
+  onDeleteLtimStrategy: (strategy: LtimStrategy) => void;
   onRunSimulation?: (model: Model) => void;
   onUpdateManagementCompany: (company: ManagementCompany) => Promise<any>;
   onUpdateAssociation: (association: Association) => Promise<any>;
   onUpdateModel: (model: Model) => Promise<any>;
-  onUpdateLtimRate: (rate: LtimInvestmentRate) => Promise<any>;
-  onAddLtimRate: (rate: any) => Promise<any>;
+  onUpdateLtimStrategy: (strategy: LtimStrategy) => Promise<any>;
+  onAddLtimStrategy: (strategy: any) => Promise<any>;
   getAssociationsByCompany: (companyId: string) => Association[];
 }
 
@@ -40,34 +41,38 @@ export function DataTables({
   managementCompanies,
   associations,
   models,
-  ltimRates,
+  ltimStrategies,
   loading,
   onDeleteManagementCompany,
   onDeleteAssociation,
   onDeleteModel,
-  onDeleteLtimRate,
+  onDeleteLtimStrategy,
   onRunSimulation,
   onUpdateManagementCompany,
   onUpdateAssociation,
   onUpdateModel,
-  onUpdateLtimRate,
-  onAddLtimRate,
+  onUpdateLtimStrategy,
+  onAddLtimStrategy,
   getAssociationsByCompany,
 }: DataTablesProps) {
   // Dialog states
   const [showEditManagementCompany, setShowEditManagementCompany] = useState(false);
   const [showEditAssociation, setShowEditAssociation] = useState(false);
   const [showEditModel, setShowEditModel] = useState(false);
-  const [showAddLtimRate, setShowAddLtimRate] = useState(false);
-  const [showEditLtimRate, setShowEditLtimRate] = useState(false);
+
   const [showModelItems, setShowModelItems] = useState(false);
   
   // Selected entities for editing
   const [selectedManagementCompany, setSelectedManagementCompany] = useState<ManagementCompany | null>(null);
   const [selectedAssociation, setSelectedAssociation] = useState<Association | null>(null);
   const [selectedModel, setSelectedModel] = useState<Model | null>(null);
-  const [selectedLtimRate, setSelectedLtimRate] = useState<LtimInvestmentRate | null>(null);
+
   const [selectedModelForItems, setSelectedModelForItems] = useState<Model | null>(null);
+  
+  // LTIM Strategy editing state
+  const [showEditLtimStrategy, setShowEditLtimStrategy] = useState(false);
+  const [selectedLtimStrategy, setSelectedLtimStrategy] = useState<LtimStrategy | null>(null);
+  const [showAddLtimStrategy, setShowAddLtimStrategy] = useState(false);
 
   // Helper functions for edit actions
   const handleEditManagementCompany = (company: ManagementCompany) => {
@@ -85,14 +90,18 @@ export function DataTables({
     setShowEditModel(true);
   };
 
-  const handleEditLtimRate = (rate: LtimInvestmentRate) => {
-    setSelectedLtimRate(rate);
-    setShowEditLtimRate(true);
-  };
-
   const handleManageItems = (model: Model) => {
     setSelectedModelForItems(model);
     setShowModelItems(true);
+  };
+
+  const handleEditLtimStrategy = (strategy: LtimStrategy) => {
+    setSelectedLtimStrategy(strategy);
+    setShowEditLtimStrategy(true);
+  };
+
+  const handleAddLtimStrategy = () => {
+    setShowAddLtimStrategy(true);
   };
 
   const totalManagementCompanies = managementCompanies.length;
@@ -106,7 +115,7 @@ export function DataTables({
           <TabsTrigger value="companies">Companies ({totalManagementCompanies})</TabsTrigger>
           <TabsTrigger value="associations">Associations ({totalAssociations})</TabsTrigger>
           <TabsTrigger value="models">Models ({totalModels})</TabsTrigger>
-          <TabsTrigger value="ltim-rates">LTIM Rates ({ltimRates.length})</TabsTrigger>
+          <TabsTrigger value="ltim-strategies">LTIM Strategies ({ltimStrategies.length})</TabsTrigger>
         </TabsList>
         
         <TabsContent value="companies" className="space-y-4">
@@ -142,20 +151,20 @@ export function DataTables({
           />
         </TabsContent>
         
-        <TabsContent value="ltim-rates" className="space-y-4">
-          <LtimInvestmentRatesTable 
-            ltimRates={ltimRates}
-            loading={loading.ltimRates}
-            onEdit={handleEditLtimRate}
-            onDelete={onDeleteLtimRate}
-            onAdd={() => setShowAddLtimRate(true)}
+        <TabsContent value="ltim-strategies" className="space-y-4">
+          <LtimStrategiesTable 
+            ltimStrategies={ltimStrategies}
+            loading={loading.ltimStrategies}
+            onEdit={handleEditLtimStrategy}
+            onDelete={onDeleteLtimStrategy}
+            onAdd={handleAddLtimStrategy}
           />
         </TabsContent>
       </Tabs>
 
       {/* Edit Management Company Dialog */}
       <Dialog open={showEditManagementCompany} onOpenChange={setShowEditManagementCompany}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-xl">
           {selectedManagementCompany && (
             <EditManagementCompanyForm 
               company={selectedManagementCompany}
@@ -168,7 +177,7 @@ export function DataTables({
 
       {/* Edit Association Dialog */}
       <Dialog open={showEditAssociation} onOpenChange={setShowEditAssociation}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-xl">
           {selectedAssociation && (
             <EditAssociationForm 
               association={selectedAssociation}
@@ -182,7 +191,7 @@ export function DataTables({
 
       {/* Edit Model Dialog */}
       <Dialog open={showEditModel} onOpenChange={setShowEditModel}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-xl">
           {selectedModel && (
             <EditModelForm 
               model={selectedModel}
@@ -193,27 +202,26 @@ export function DataTables({
           )}
         </DialogContent>
       </Dialog>
-
-      {/* Add LTIM Rate Dialog */}
-      <Dialog open={showAddLtimRate} onOpenChange={setShowAddLtimRate}>
-        <DialogContent className="sm:max-w-md">
-          <AddLtimRateForm 
-            onSuccess={() => setShowAddLtimRate(false)}
-            onAdd={onAddLtimRate}
-          />
+      {/* Edit LTIM Strategy Dialog */}
+      <Dialog open={showEditLtimStrategy} onOpenChange={setShowEditLtimStrategy}>
+        <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
+          {selectedLtimStrategy && (
+            <EditLtimStrategyForm 
+              strategy={selectedLtimStrategy}
+              onSuccess={() => setShowEditLtimStrategy(false)}
+              onUpdate={onUpdateLtimStrategy}
+            />
+          )}
         </DialogContent>
       </Dialog>
 
-      {/* Edit LTIM Rate Dialog */}
-      <Dialog open={showEditLtimRate} onOpenChange={setShowEditLtimRate}>
-        <DialogContent className="sm:max-w-md">
-          {selectedLtimRate && (
-            <EditLtimRateForm 
-              ltimRate={selectedLtimRate}
-              onSuccess={() => setShowEditLtimRate(false)}
-              onUpdate={onUpdateLtimRate}
-            />
-          )}
+      {/* Add LTIM Strategy Dialog */}
+      <Dialog open={showAddLtimStrategy} onOpenChange={setShowAddLtimStrategy}>
+        <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
+          <AddLtimStrategyForm 
+            onSuccess={() => setShowAddLtimStrategy(false)}
+            onAdd={onAddLtimStrategy}
+          />
         </DialogContent>
       </Dialog>
 

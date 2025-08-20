@@ -3,8 +3,8 @@
 import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogTrigger } from '@/components/ui/dialog';
-import { PlusIcon, BuildingIcon, ChartBarIcon, CogIcon } from 'lucide-react';
+import { Dialog, DialogContent, DialogTrigger, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { PlusIcon, BuildingIcon, ChartBarIcon, CogIcon, Trash2Icon } from 'lucide-react';
 import { ManagementCompany, Association } from '@/lib/db-types';
 
 // We'll import these from separate form files later
@@ -16,7 +16,8 @@ interface QuickActionsProps {
   onAddManagementCompany: (company: any) => Promise<any>;
   onAddAssociation: (association: any) => Promise<any>;
   onAddModel: (model: any) => Promise<any>;
-  onSeedSampleData: () => void;
+  onSeedSampleData: () => Promise<void>;
+  onClearAllData: () => Promise<void>;
 }
 
 export function QuickActions({
@@ -26,10 +27,37 @@ export function QuickActions({
   onAddAssociation,
   onAddModel,
   onSeedSampleData,
+  onClearAllData,
 }: QuickActionsProps) {
   const [showAddManagementCompany, setShowAddManagementCompany] = useState(false);
   const [showAddAssociation, setShowAddAssociation] = useState(false);
   const [showAddModel, setShowAddModel] = useState(false);
+  const [showClearConfirmation, setShowClearConfirmation] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
+  const [isSeeding, setIsSeeding] = useState(false);
+
+  const handleSeedSampleData = async () => {
+    try {
+      setIsSeeding(true);
+      await onSeedSampleData();
+    } catch (error) {
+      console.error('Failed to seed sample data:', error);
+    } finally {
+      setIsSeeding(false);
+    }
+  };
+
+  const handleClearAllData = async () => {
+    try {
+      setIsClearing(true);
+      await onClearAllData();
+      setShowClearConfirmation(false);
+    } catch (error) {
+      console.error('Failed to clear data:', error);
+    } finally {
+      setIsClearing(false);
+    }
+  };
 
   return (
     <Card>
@@ -45,7 +73,7 @@ export function QuickActions({
               Add Management Company
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-md">
+          <DialogContent className="sm:max-w-xl">
             <AddManagementCompanyForm 
               onSuccess={() => setShowAddManagementCompany(false)}
               onAdd={onAddManagementCompany}
@@ -60,7 +88,7 @@ export function QuickActions({
               Add Association
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-md">
+          <DialogContent className="sm:max-w-xl">
             <AddAssociationForm 
               managementCompanies={managementCompanies}
               onSuccess={() => setShowAddAssociation(false)}
@@ -76,7 +104,7 @@ export function QuickActions({
               Create Reserve Model
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-md">
+          <DialogContent className="sm:max-w-xl">
             <AddModelForm 
               associations={associations}
               onSuccess={() => setShowAddModel(false)}
@@ -88,11 +116,50 @@ export function QuickActions({
         <Button 
           className="w-full justify-start" 
           variant="outline"
-          onClick={onSeedSampleData}
+          onClick={handleSeedSampleData}
+          disabled={isSeeding || isClearing}
         >
           <BuildingIcon className="h-4 w-4 mr-2" />
-          Generate Sample Data
+          {isSeeding ? 'Generating...' : 'Generate Sample Data'}
         </Button>
+
+        <Dialog open={showClearConfirmation} onOpenChange={setShowClearConfirmation}>
+          <DialogTrigger asChild>
+            <Button 
+              className="w-full justify-start" 
+              variant="outline"
+              disabled={isClearing || isSeeding}
+            >
+              <Trash2Icon className="h-4 w-4 mr-2" />
+              {isClearing ? 'Clearing...' : 'Clear All Data'}
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-xl">
+            <DialogHeader>
+              <DialogTitle>Clear All Data</DialogTitle>
+              <DialogDescription>
+                This action cannot be undone. This will permanently delete all management companies, 
+                associations, models, model items, LTIM rates, and all simulation data.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="flex gap-2">
+              <Button 
+                variant="outline" 
+                onClick={() => setShowClearConfirmation(false)}
+                disabled={isClearing || isSeeding}
+              >
+                Cancel
+              </Button>
+              <Button 
+                variant="destructive"
+                onClick={handleClearAllData}
+                disabled={isClearing || isSeeding}
+              >
+                {isClearing ? 'Clearing...' : 'Clear All Data'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </CardContent>
     </Card>
   );

@@ -63,7 +63,7 @@ export function ModelItemsManager({ model }: ModelItemsManagerProps) {
       <Dialog open={showAddItem} onOpenChange={setShowAddItem}>
         <DialogContent className="sm:max-w-md">
           <AddModelItemForm
-            modelId={model.id}
+            model={model}
             onSuccess={() => setShowAddItem(false)}
             onAdd={handleAddItem}
           />

@@ -20,7 +20,8 @@ import {
   Pie,
   Cell,
   Area,
-  AreaChart
+  AreaChart,
+  ComposedChart
 } from 'recharts';
 import { 
   TrendingUpIcon, 
@@ -28,113 +29,103 @@ import {
   AlertTriangleIcon, 
   CheckCircleIcon, 
   DollarSignIcon,
-  CalendarIcon 
+  CalendarIcon,
+  PiggyBankIcon,
+  CreditCardIcon
 } from 'lucide-react';
 import { Model, ModelItem } from '@/lib/db-types';
 import { 
-  calculateReserveProjections,
-  generateReserveSummary,
-  calculateContributionAdequacy,
+  calculateFinancialProjections,
+  generateFinancialSummary,
+  calculateMonthlyLoanPayment,
   formatCurrency,
   formatPercentage
-} from '@/lib/reserve-calculations';
-
-type SimulationSettings = {
-  projectionYears: number;
-  customInflationRate: number | null;
-  customMonthlyFees: number | null;
-  targetMinBalance: number;
-  includeInterest: boolean;
-};
+} from '@/lib/financial-simulator';
+import { convertDbStrategyToData } from '@/lib/ltim-calculations';
+import { useLtimStrategies } from '@/hooks/use-database';
+import { FinancialSimulatorSettings } from '@/components/simulation-settings';
 
 interface SimulationResultsProps {
   model: Model;
   modelItems: ModelItem[];
-  settings: SimulationSettings;
+  settings: FinancialSimulatorSettings;
 }
 
 const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
 
 export function SimulationResults({ model, modelItems, settings }: SimulationResultsProps) {
+  const { items: strategies } = useLtimStrategies();
+  
   const adjustedModel = useMemo(() => ({
     ...model,
-    inflation_rate: settings.customInflationRate ?? model.inflation_rate,
-    monthly_fees: settings.customMonthlyFees ?? model.monthly_fees,
-    bank_int_rate: settings.includeInterest ? model.bank_int_rate : 0,
+    ...settings, // Override model values with settings
   }), [model, settings]);
 
+  // Look up LTIM strategy if enabled
+  const ltimStrategyData = useMemo(() => {
+    if (!adjustedModel.ltim_enabled || !adjustedModel.ltim_strategy_id || adjustedModel.ltim_strategy_id === 'none') {
+      return undefined;
+    }
+    
+    const strategy = strategies.find(s => s.id === adjustedModel.ltim_strategy_id && s.active);
+    return strategy ? convertDbStrategyToData(strategy) : undefined;
+  }, [adjustedModel.ltim_enabled, adjustedModel.ltim_strategy_id, strategies]);
+
   const projections = useMemo(() => 
-    calculateReserveProjections(adjustedModel, modelItems, settings.projectionYears),
-    [adjustedModel, modelItems, settings.projectionYears]
+    calculateFinancialProjections(adjustedModel as Model, modelItems, settings.projectionYears, ltimStrategyData),
+    [adjustedModel, modelItems, settings.projectionYears, ltimStrategyData]
   );
 
   const summary = useMemo(() => 
-    generateReserveSummary(projections),
+    generateFinancialSummary(projections),
     [projections]
   );
 
-  const adequacyPercentage = useMemo(() => 
-    calculateContributionAdequacy(adjustedModel, modelItems, settings.projectionYears),
-    [adjustedModel, modelItems, settings.projectionYears]
+  const monthlyLoanPayment = useMemo(() =>
+    calculateMonthlyLoanPayment(adjustedModel as Model),
+    [adjustedModel]
   );
 
-  // Chart data preparation
+  // Chart data preparation for financial simulator
   const balanceChartData = projections.map(p => ({
     year: p.year,
-    balance: p.endingBalance,
-    income: p.income,
-    expenses: p.expenses,
-    targetMinBalance: settings.targetMinBalance,
+    remainingAmount: p.remainingAmount,
+    totalAvailable: p.totalAvailableToInvest,
+    ltimAccumulated: p.projectedAccumulatedLTIMFunds,
   }));
 
-  const cashFlowData = projections.map(p => ({
+  const financialFlowData = projections.map(p => ({
     year: p.year,
-    income: p.income,
-    expenses: p.expenses,
-    netFlow: p.income - p.expenses,
+    netEarnings: p.netEarnings,
+    compoundSavings: p.compoundValueOfSavings,
+    ltimEarnings: p.projectedLTIMEarnings,
+    purchasingPowerLoss: -p.lossInPurchasingPower, // Negative for chart
+    loanPayments: -p.loanPayments, // Negative for chart
+    expenses: -p.expenses, // Negative for chart (changed from spending to expenses)
   }));
 
-  // Component replacement schedule
-  const replacementSchedule = useMemo(() => {
-    const schedule: { [year: number]: { items: any[], totalCost: number } } = {};
+  // Investment performance breakdown
+  const investmentBreakdown = useMemo(() => {
+    const totalEarnings = projections.reduce((sum, p) => sum + p.netEarnings, 0);
+    const totalCompound = projections.reduce((sum, p) => sum + (p.compoundValueOfSavings - settings.investment_amount_compound), 0);
+    const totalLTIM = summary.totalLTIMAccumulated;
     
-    projections.forEach(p => {
-      if (p.items.length > 0) {
-        schedule[p.year] = {
-          items: p.items,
-          totalCost: p.items.reduce((sum, item) => sum + item.cost, 0)
-        };
-      }
-    });
-    
-    return schedule;
-  }, [projections]);
+    return [
+      { name: 'Investment Returns', value: totalEarnings },
+      { name: 'Compound Savings', value: Math.max(0, totalCompound) },
+      { name: 'LTIM Returns', value: Math.max(0, totalLTIM) },
+    ].filter(item => item.value > 0);
+  }, [projections, summary, settings]);
 
-  const replacementChartData = Object.entries(replacementSchedule).map(([year, data]) => ({
-    year: parseInt(year),
-    totalCost: data.totalCost,
-    itemCount: data.items.length,
-  }));
+  // Loan schedule data
+  const loanScheduleData = settings.loan_amount > 0 ? projections.map(p => ({
+    year: p.year,
+    payment: p.loanPayments,
+    monthlyPayment: monthlyLoanPayment,
+  })) : [];
 
-  // Expense breakdown by category
-  const expensesByCategory = useMemo(() => {
-    const categories: { [key: string]: number } = {};
-    
-    projections.forEach(p => {
-      p.items.forEach(item => {
-        const category = item.name.split(' ')[0]; // Simple categorization
-        categories[category] = (categories[category] || 0) + item.cost;
-      });
-    });
-    
-    return Object.entries(categories)
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 6); // Top 6 categories
-  }, [projections]);
-
-  const isHealthy = summary.minBalance >= settings.targetMinBalance;
-  const hasDeficit = summary.needsLoan;
+  const isHealthy = summary.finalRemainingAmount >= 0;
+  const hasDeficit = summary.minRemainingAmount < 0;
 
   return (
     <div className="space-y-6">
@@ -142,12 +133,12 @@ export function SimulationResults({ model, modelItems, settings }: SimulationRes
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Final Balance</CardTitle>
+            <CardTitle className="text-sm font-medium">Final Remaining</CardTitle>
             <DollarSignIcon className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {formatCurrency(summary.finalBalance)}
+              {formatCurrency(summary.finalRemainingAmount)}
             </div>
             <p className="text-xs text-muted-foreground">
               After {settings.projectionYears} years
@@ -157,8 +148,8 @@ export function SimulationResults({ model, modelItems, settings }: SimulationRes
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Min Balance</CardTitle>
-            {summary.minBalance >= 0 ? (
+            <CardTitle className="text-sm font-medium">Min Remaining</CardTitle>
+            {summary.minRemainingAmount >= 0 ? (
               <CheckCircleIcon className="h-4 w-4 text-green-500" />
             ) : (
               <AlertTriangleIcon className="h-4 w-4 text-red-500" />
@@ -166,42 +157,40 @@ export function SimulationResults({ model, modelItems, settings }: SimulationRes
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {formatCurrency(summary.minBalance)}
+              {formatCurrency(summary.minRemainingAmount)}
             </div>
             <p className="text-xs text-muted-foreground">
-              In {summary.minBalanceYear}
+              In {summary.minRemainingAmountYear}
             </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Funding Adequacy</CardTitle>
-            {adequacyPercentage >= 100 ? (
-              <TrendingUpIcon className="h-4 w-4 text-green-500" />
-            ) : (
-              <TrendingDownIcon className="h-4 w-4 text-red-500" />
-            )}
+            <CardTitle className="text-sm font-medium">LTIM Accumulated</CardTitle>
+            <PiggyBankIcon className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {formatPercentage(adequacyPercentage)}
+              {formatCurrency(summary.totalLTIMAccumulated)}
             </div>
-            <Progress value={Math.min(adequacyPercentage, 100)} className="mt-2" />
+            <p className="text-xs text-muted-foreground">
+              Long-term investment growth
+            </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Expenses</CardTitle>
-            <CalendarIcon className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Monthly Loan Payment</CardTitle>
+            <CreditCardIcon className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {formatCurrency(summary.totalExpenses)}
+              {formatCurrency(monthlyLoanPayment)}
             </div>
             <p className="text-xs text-muted-foreground">
-              Over {settings.projectionYears} years
+              {settings.loan_amount > 0 ? `${settings.loan_term_years} year term` : 'No loan'}
             </p>
           </CardContent>
         </Card>
@@ -212,8 +201,8 @@ export function SimulationResults({ model, modelItems, settings }: SimulationRes
         <Alert variant="destructive">
           <AlertTriangleIcon className="h-4 w-4" />
           <AlertDescription>
-            <strong>Funding Deficit Detected:</strong> The reserve fund will require a loan of up to {formatCurrency(summary.maxLoanAmount)} 
-            to cover expenses. Consider increasing monthly contributions or adjusting the replacement schedule.
+            <strong>Financial Deficit Detected:</strong> The remaining amount will go negative to {formatCurrency(summary.minRemainingAmount)}&nbsp;
+            in {summary.minRemainingAmountYear}. Consider adjusting expenses, loan terms, or investment allocations.
           </AlertDescription>
         </Alert>
       )}
@@ -222,9 +211,18 @@ export function SimulationResults({ model, modelItems, settings }: SimulationRes
         <Alert>
           <AlertTriangleIcon className="h-4 w-4" />
           <AlertDescription>
-            <strong>Below Target Balance:</strong> The minimum balance of {formatCurrency(summary.minBalance)} 
-            falls below your target of {formatCurrency(settings.targetMinBalance)}. 
-            Consider adjusting contributions or target balance.
+            <strong>Low Final Balance:</strong> The final remaining amount of {formatCurrency(summary.finalRemainingAmount)}&nbsp;
+            may not provide adequate financial cushion. Consider reviewing your financial strategy.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {summary.totalPurchasingPowerLoss > summary.totalProjectedGains && (
+        <Alert>
+          <AlertTriangleIcon className="h-4 w-4" />
+          <AlertDescription>
+            <strong>Inflation Risk:</strong> Purchasing power loss ({formatCurrency(summary.totalPurchasingPowerLoss)})&nbsp;
+            exceeds projected gains ({formatCurrency(summary.totalProjectedGains)}). Consider higher-yield investments.
           </AlertDescription>
         </Alert>
       )}
@@ -233,25 +231,25 @@ export function SimulationResults({ model, modelItems, settings }: SimulationRes
       <Tabs defaultValue="overview" className="w-full">
         <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="cash-flow">Cash Flow</TabsTrigger>
-          <TabsTrigger value="schedule">Replacement Schedule</TabsTrigger>
+          <TabsTrigger value="financial-flow">Financial Flow</TabsTrigger>
+          <TabsTrigger value="investments">Investments</TabsTrigger>
           <TabsTrigger value="analysis">Analysis</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Reserve Balance Over Time</CardTitle>
+              <CardTitle>Remaining Amount Over Time</CardTitle>
               <CardDescription>
-                Projected fund balance with target minimum shown in red
+                Financial projection showing remaining amount and LTIM accumulation
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="h-80">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={balanceChartData}>
+                  <ComposedChart data={balanceChartData}>
                     <defs>
-                      <linearGradient id="balanceGradient" x1="0" y1="0" x2="0" y2="1">
+                      <linearGradient id="remainingGradient" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
                         <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
                       </linearGradient>
@@ -260,25 +258,28 @@ export function SimulationResults({ model, modelItems, settings }: SimulationRes
                     <XAxis dataKey="year" />
                     <YAxis tickFormatter={(value) => formatCurrency(value)} />
                     <Tooltip 
-                      formatter={(value: number) => [formatCurrency(value), 'Balance']}
+                      formatter={(value: number, name: string) => [
+                        formatCurrency(value), 
+                        name === 'remainingAmount' ? 'Remaining Amount' : 
+                        name === 'ltimAccumulated' ? 'LTIM Accumulated' : 'Total Available'
+                      ]}
                       labelFormatter={(label) => `Year ${label}`}
                     />
                     <Area 
                       type="monotone" 
-                      dataKey="balance" 
+                      dataKey="remainingAmount" 
                       stroke="#3b82f6" 
                       strokeWidth={2}
-                      fill="url(#balanceGradient)" 
+                      fill="url(#remainingGradient)" 
                     />
                     <Line 
                       type="monotone" 
-                      dataKey="targetMinBalance" 
-                      stroke="#ef4444" 
-                      strokeDasharray="5 5"
+                      dataKey="ltimAccumulated" 
+                      stroke="#10b981" 
                       strokeWidth={2}
                       dot={false}
                     />
-                  </AreaChart>
+                  </ComposedChart>
                 </ResponsiveContainer>
               </div>
             </CardContent>
@@ -287,27 +288,29 @@ export function SimulationResults({ model, modelItems, settings }: SimulationRes
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card>
               <CardHeader>
-                <CardTitle>Annual Summary</CardTitle>
+                <CardTitle>Financial Summary</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Total Income:</span>
-                    <span className="font-medium">{formatCurrency(summary.totalIncome)}</span>
+                    <span className="text-gray-600">Total Projected Gains:</span>
+                    <span className="font-medium text-green-600">{formatCurrency(summary.totalProjectedGains)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Total Expenses:</span>
-                    <span className="font-medium">{formatCurrency(summary.totalExpenses)}</span>
+                    <span className="font-medium text-red-600">{formatCurrency(summary.totalExpenses)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Net Cash Flow:</span>
-                    <span className={`font-medium ${summary.totalIncome - summary.totalExpenses >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {formatCurrency(summary.totalIncome - summary.totalExpenses)}
-                    </span>
+                    <span className="text-gray-600">Total Loan Payments:</span>
+                    <span className="font-medium text-red-600">{formatCurrency(summary.totalLoanPayments)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Average Balance:</span>
-                    <span className="font-medium">{formatCurrency(summary.averageBalance)}</span>
+                    <span className="text-gray-600">Purchasing Power Loss:</span>
+                    <span className="font-medium text-red-600">{formatCurrency(summary.totalPurchasingPowerLoss)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Average Remaining:</span>
+                    <span className="font-medium">{formatCurrency(summary.averageRemainingAmount)}</span>
                   </div>
                 </div>
               </CardContent>
@@ -315,14 +318,14 @@ export function SimulationResults({ model, modelItems, settings }: SimulationRes
 
             <Card>
               <CardHeader>
-                <CardTitle>Expense Categories</CardTitle>
+                <CardTitle>Investment Returns</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="h-48">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
-                        data={expensesByCategory}
+                        data={investmentBreakdown}
                         cx="50%"
                         cy="50%"
                         innerRadius={40}
@@ -330,7 +333,7 @@ export function SimulationResults({ model, modelItems, settings }: SimulationRes
                         paddingAngle={5}
                         dataKey="value"
                       >
-                        {expensesByCategory.map((entry, index) => (
+                        {investmentBreakdown.map((entry, index) => (
                           <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
                         ))}
                       </Pie>
@@ -343,30 +346,38 @@ export function SimulationResults({ model, modelItems, settings }: SimulationRes
           </div>
         </TabsContent>
 
-        <TabsContent value="cash-flow" className="space-y-6">
+        <TabsContent value="financial-flow" className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Annual Cash Flow</CardTitle>
+              <CardTitle>Annual Financial Flow</CardTitle>
               <CardDescription>
-                Income vs expenses by year
+                Gains vs losses by year
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="h-80">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={cashFlowData}>
+                  <BarChart data={financialFlowData}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="year" />
-                    <YAxis tickFormatter={(value) => formatCurrency(value)} />
+                    <YAxis tickFormatter={(value) => formatCurrency(Math.abs(value))} />
                     <Tooltip 
                       formatter={(value: number, name: string) => [
-                        formatCurrency(value), 
-                        name === 'income' ? 'Income' : name === 'expenses' ? 'Expenses' : 'Net Flow'
+                        formatCurrency(Math.abs(value)), 
+                        name === 'netEarnings' ? 'Investment Returns' :
+                        name === 'compoundSavings' ? 'Compound Savings' :
+                        name === 'ltimEarnings' ? 'LTIM Earnings' :
+                        name === 'purchasingPowerLoss' ? 'Purchasing Power Loss' :
+                        name === 'loanPayments' ? 'Loan Payments' : 'Spending'
                       ]}
                       labelFormatter={(label) => `Year ${label}`}
                     />
-                    <Bar dataKey="income" fill="#10b981" name="income" />
-                    <Bar dataKey="expenses" fill="#ef4444" name="expenses" />
+                    <Bar dataKey="netEarnings" fill="#10b981" name="netEarnings" />
+                    <Bar dataKey="compoundSavings" fill="#3b82f6" name="compoundSavings" />
+                    <Bar dataKey="ltimEarnings" fill="#8b5cf6" name="ltimEarnings" />
+                    <Bar dataKey="purchasingPowerLoss" fill="#ef4444" name="purchasingPowerLoss" />
+                    <Bar dataKey="loanPayments" fill="#f59e0b" name="loanPayments" />
+                    <Bar dataKey="expenses" fill="#6b7280" name="expenses" />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -374,67 +385,96 @@ export function SimulationResults({ model, modelItems, settings }: SimulationRes
           </Card>
         </TabsContent>
 
-        <TabsContent value="schedule" className="space-y-6">
+        <TabsContent value="investments" className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Component Replacement Schedule</CardTitle>
+              <CardTitle>Investment Allocation Breakdown</CardTitle>
               <CardDescription>
-                Expected replacement costs by year
+                How your funds are allocated across different investment vehicles
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={replacementChartData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="year" />
-                    <YAxis tickFormatter={(value) => formatCurrency(value)} />
-                    <Tooltip 
-                      formatter={(value: number, name: string) => [
-                        name === 'totalCost' ? formatCurrency(value) : value,
-                        name === 'totalCost' ? 'Total Cost' : 'Item Count'
-                      ]}
-                      labelFormatter={(label) => `Year ${label}`}
-                    />
-                    <Bar dataKey="totalCost" fill="#3b82f6" />
-                  </BarChart>
-                </ResponsiveContainer>
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="text-center p-4 border rounded-lg">
+                    <div className="text-2xl font-bold text-blue-600">
+                      {formatCurrency(settings.total_amount_invested)}
+                    </div>
+                    <p className="text-sm text-gray-600">Direct Investments</p>
+                    <p className="text-xs text-gray-500">{settings.annual_investment_return_rate}% return</p>
+                  </div>
+                  <div className="text-center p-4 border rounded-lg">
+                    <div className="text-2xl font-bold text-green-600">
+                      {formatCurrency(settings.investment_amount_compound)}
+                    </div>
+                    <p className="text-sm text-gray-600">Compound Savings</p>
+                    <p className="text-xs text-gray-500">{settings.bank_savings_interest_rate}% return</p>
+                  </div>
+                  <div className="text-center p-4 border rounded-lg">
+                    <div className="text-2xl font-bold text-purple-600">
+                      {summary.totalLTIMAccumulated ? formatCurrency(summary.totalLTIMAccumulated) : '$0'}
+                    </div>
+                    <p className="text-sm text-gray-600">LTIM Allocation</p>
+                    <p className="text-xs text-gray-500">{settings.ltim_return_rate}% return</p>
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Replacement Timeline</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4 max-h-96 overflow-y-auto">
-                {Object.entries(replacementSchedule).map(([year, data]) => (
-                  <div key={year} className="border rounded-lg p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="font-medium">Year {year}</h4>
-                      <Badge variant="secondary">
-                        {data.items.length} item{data.items.length !== 1 ? 's' : ''} • {formatCurrency(data.totalCost)}
-                      </Badge>
+          {settings.loan_amount > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Loan Payment Schedule</CardTitle>
+                <CardDescription>
+                  Monthly payment breakdown for {settings.loan_term_years}-year loan
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+                    <div className="p-4 border rounded-lg">
+                      <div className="text-2xl font-bold text-red-600">
+                        {formatCurrency(settings.loan_amount)}
+                      </div>
+                      <p className="text-sm text-gray-600">Principal Amount</p>
                     </div>
-                    <div className="space-y-1">
-                      {data.items.map((item, index) => (
-                        <div key={index} className="flex justify-between text-sm">
-                          <span className="text-gray-600">{item.name}</span>
-                          <span className="font-medium">{formatCurrency(item.cost)}</span>
-                        </div>
-                      ))}
+                    <div className="p-4 border rounded-lg">
+                      <div className="text-2xl font-bold text-orange-600">
+                        {formatCurrency(monthlyLoanPayment)}
+                      </div>
+                      <p className="text-sm text-gray-600">Monthly Payment</p>
+                    </div>
+                    <div className="p-4 border rounded-lg">
+                      <div className="text-2xl font-bold text-gray-600">
+                        {settings.annual_loan_interest_rate}%
+                      </div>
+                      <p className="text-sm text-gray-600">Interest Rate</p>
                     </div>
                   </div>
-                ))}
-                {Object.keys(replacementSchedule).length === 0 && (
-                  <div className="text-center py-8 text-gray-500">
-                    No component replacements scheduled during this period.
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={loanScheduleData}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="year" />
+                        <YAxis tickFormatter={(value) => formatCurrency(value)} />
+                        <Tooltip 
+                          formatter={(value: number) => [formatCurrency(value), 'Annual Payment']}
+                          labelFormatter={(label) => `Year ${label}`}
+                        />
+                        <Line 
+                          type="monotone" 
+                          dataKey="payment" 
+                          stroke="#f59e0b" 
+                          strokeWidth={2}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
                   </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         <TabsContent value="analysis" className="space-y-6">
@@ -446,21 +486,27 @@ export function SimulationResults({ model, modelItems, settings }: SimulationRes
               <CardContent>
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <span>Funding Adequacy</span>
-                    <Badge variant={adequacyPercentage >= 100 ? "default" : "destructive"}>
-                      {formatPercentage(adequacyPercentage)}
+                    <span>Overall Performance</span>
+                    <Badge variant={isHealthy ? "default" : "destructive"}>
+                      {isHealthy ? "Positive" : "Negative"}
                     </Badge>
                   </div>
                   <div className="flex items-center justify-between">
                     <span>Balance Stability</span>
-                    <Badge variant={summary.minBalance >= 0 ? "default" : "destructive"}>
-                      {summary.minBalance >= 0 ? "Stable" : "At Risk"}
+                    <Badge variant={summary.minRemainingAmount >= 0 ? "default" : "destructive"}>
+                      {summary.minRemainingAmount >= 0 ? "Stable" : "At Risk"}
                     </Badge>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span>Target Compliance</span>
-                    <Badge variant={isHealthy ? "default" : "secondary"}>
-                      {isHealthy ? "Compliant" : "Below Target"}
+                    <span>Investment Returns</span>
+                    <Badge variant={summary.totalProjectedGains > 0 ? "default" : "secondary"}>
+                      {summary.totalProjectedGains > 0 ? "Positive" : "Neutral"}
+                    </Badge>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>Inflation Impact</span>
+                    <Badge variant={summary.totalPurchasingPowerLoss < summary.totalProjectedGains ? "default" : "destructive"}>
+                      {summary.totalPurchasingPowerLoss < summary.totalProjectedGains ? "Protected" : "At Risk"}
                     </Badge>
                   </div>
                 </div>
@@ -473,28 +519,34 @@ export function SimulationResults({ model, modelItems, settings }: SimulationRes
               </CardHeader>
               <CardContent>
                 <div className="space-y-3 text-sm">
-                  {adequacyPercentage < 100 && (
-                    <div className="flex items-start space-x-2">
-                      <AlertTriangleIcon className="h-4 w-4 text-amber-500 mt-0.5" />
-                      <p>Consider increasing monthly contributions to achieve 100% funding adequacy.</p>
-                    </div>
-                  )}
-                  {summary.needsLoan && (
+                  {hasDeficit && (
                     <div className="flex items-start space-x-2">
                       <AlertTriangleIcon className="h-4 w-4 text-red-500 mt-0.5" />
-                      <p>Plan for potential borrowing needs of up to {formatCurrency(summary.maxLoanAmount)}.</p>
+                      <p>Reduce expenses or increase investment allocations to prevent negative balance in {summary.minRemainingAmountYear}.</p>
                     </div>
                   )}
-                  {!isHealthy && (
+                  {summary.totalPurchasingPowerLoss > summary.totalProjectedGains && (
                     <div className="flex items-start space-x-2">
                       <AlertTriangleIcon className="h-4 w-4 text-amber-500 mt-0.5" />
-                      <p>Review target minimum balance to ensure it aligns with operational needs.</p>
+                      <p>Consider increasing investment return rates or allocating more funds to higher-yield investments to combat inflation.</p>
                     </div>
                   )}
-                  {adequacyPercentage >= 100 && !hasDeficit && isHealthy && (
+                  {settings.loan_amount > 0 && summary.totalLoanPayments > summary.totalProjectedGains && (
+                    <div className="flex items-start space-x-2">
+                      <AlertTriangleIcon className="h-4 w-4 text-amber-500 mt-0.5" />
+                      <p>Loan payments exceed investment gains. Consider paying down the loan faster or increasing investment returns.</p>
+                    </div>
+                  )}
+                  {isHealthy && summary.totalProjectedGains > summary.totalPurchasingPowerLoss && !hasDeficit && (
                     <div className="flex items-start space-x-2">
                       <CheckCircleIcon className="h-4 w-4 text-green-500 mt-0.5" />
-                      <p>Reserve fund is well-funded and meets all target requirements.</p>
+                      <p>Financial plan is sound with positive projected outcomes and inflation protection.</p>
+                    </div>
+                  )}
+                  {summary.totalLTIMAccumulated > 0 && (
+                    <div className="flex items-start space-x-2">
+                      <CheckCircleIcon className="h-4 w-4 text-green-500 mt-0.5" />
+                      <p>LTIM strategy is working well with strong compound growth. Consider increasing allocation if possible.</p>
                     </div>
                   )}
                 </div>

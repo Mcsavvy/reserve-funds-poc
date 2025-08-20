@@ -58,6 +58,26 @@ export interface Model {
   active: boolean;
   updated_at: number;
   created_at: number;
+  
+  // New Financial Simulator Fields
+  immediate_assessment: number;
+  loan_amount: number;
+  liquidated_investment_principal: number;
+  liquidated_earnings: number;
+  yearly_collections: number;
+  total_amount_invested: number;
+  annual_investment_return_rate: number;
+  investment_amount_compound: number;
+  bank_savings_interest_rate: number;
+
+  ltim_return_rate: number;
+  loan_term_years: number;
+  annual_loan_interest_rate: number;  
+  // LTIM Strategy Settings
+  ltim_enabled: boolean;
+  ltim_strategy_id?: string; // ID of the selected LTIM strategy from database
+  ltim_percentage: number; // Percentage of surplus allocated to LTIM (0-100)
+  ltim_start_year: number; // When to start LTIM calculations relative to fiscal year
 }
 
 export interface ModelItem {
@@ -69,6 +89,7 @@ export interface ModelItem {
   remaining_life: number;
   cost: number;
   is_sirs: boolean;
+  starting_year: string; // Year when this item tracking begins (defaults to model's fiscal year)
 }
 
 export interface ModelClientRate {
@@ -169,6 +190,44 @@ export interface LtimInvestmentRate {
   updated_at: number;
 }
 
+// Database entity for LTIM strategies
+export interface LtimStrategy {
+  row?: number;
+  id: string;
+  name: string; // Human-readable name for the strategy
+  description?: string; // Optional description
+  state: string; // US state code this strategy is for
+  start_year: number; // Year when LTIM strategy begins
+  buckets: string; // JSON stringified LTIMBucket array
+  active: boolean;
+  created_at: number;
+  updated_at: number;
+}
+
+// LTIM Strategy Types for sophisticated bucket-based investments
+export interface LTIMBucket {
+  dur: number; // Duration in years for this bucket
+  rate: number; // Investment return rate for this bucket (as decimal, e.g., 0.055 = 5.5%)
+}
+
+export interface LTIMStrategyData {
+  name: string; // Human-readable name for the strategy
+  start_year: number; // Year when LTIM strategy begins
+  buckets: LTIMBucket[]; // Array of time buckets with rates
+}
+
+export interface LTIMConfig {
+  [state: string]: LTIMStrategyData; // State code -> LTIM Strategy mapping
+}
+
+// LTIM Settings for models
+export interface LTIMSettings {
+  enabled: boolean; // Whether LTIM is enabled for this model
+  strategy_id?: string; // ID of the selected LTIM strategy from database
+  ltim_percentage: number; // Percentage of surplus allocated to LTIM (0-100)
+  start_year: number; // When to start LTIM calculations relative to fiscal year
+}
+
 // Global app configuration
 export interface AppConfig {
   user?: {
@@ -205,6 +264,7 @@ export const DB_STORES = {
   SIMULATION_VERSIONS: 'simulation_versions',
   CONFIG: 'config',
   LTIM_INVESTMENT_RATES: 'ltim_investment_rates',
+  LTIM_STRATEGIES: 'ltim_strategies',
 } as const;
 
 export type DBStoreNames = typeof DB_STORES[keyof typeof DB_STORES];

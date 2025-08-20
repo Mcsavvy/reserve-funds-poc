@@ -1,20 +1,17 @@
 'use client';
 
-import { useEffect, useState, use, useMemo } from 'react';
+import { useEffect, useState, use } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeftIcon, SettingsIcon, PlayIcon, DownloadIcon } from 'lucide-react';
+import { ArrowLeftIcon, SettingsIcon, PlayIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
 import { useDatabase, useModels, useModelItems, useAssociations } from '@/hooks/use-database';
 import { Model, ModelItem, Association } from '@/lib/db-types';
-import { SimulationSettings } from '@/components/simulation-settings';
+import { SimulationSettings, FinancialSimulatorSettings } from '@/components/simulation-settings';
 import { SimulationResults } from '@/components/simulation-results';
 import { 
-  calculateReserveProjections, 
-  generateReserveSummary,
   formatCurrency 
-} from '@/lib/reserve-calculations';
+} from '@/lib/financial-simulator';
 
 interface SimulationPageProps {
   params: Promise<{
@@ -36,18 +33,23 @@ export default function SimulationPage({ params }: SimulationPageProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
-  const [simulationSettings, setSimulationSettings] = useState<{
-    projectionYears: number;
-    customInflationRate: number | null;
-    customMonthlyFees: number | null;
-    targetMinBalance: number;
-    includeInterest: boolean;
-  }>({
+  const [simulationSettings, setSimulationSettings] = useState<FinancialSimulatorSettings>({
     projectionYears: 30,
-    customInflationRate: null,
-    customMonthlyFees: null,
-    targetMinBalance: 0,
-    includeInterest: true,
+    starting_amount: 0,
+    immediate_assessment: 0,
+    loan_amount: 0,
+    liquidated_investment_principal: 0,
+    liquidated_earnings: 0,
+    yearly_collections: 0,
+    total_amount_invested: 0,
+    investment_amount_compound: 0,
+
+    annual_investment_return_rate: 5,
+    bank_savings_interest_rate: 2,
+    ltim_return_rate: 4,
+    inflation_rate: 3,
+    loan_term_years: 10,
+    annual_loan_interest_rate: 6,
   });
 
   // Load model and related data
@@ -74,6 +76,21 @@ export default function SimulationPage({ params }: SimulationPageProps) {
         setSimulationSettings(prev => ({
           ...prev,
           projectionYears: modelData.period || 30,
+          starting_amount: modelData.starting_amount || 0,
+          immediate_assessment: modelData.immediate_assessment || 0,
+          loan_amount: modelData.loan_amount || 0,
+          liquidated_investment_principal: modelData.liquidated_investment_principal || 0,
+          liquidated_earnings: modelData.liquidated_earnings || 0,
+          yearly_collections: modelData.yearly_collections || 0,
+          total_amount_invested: modelData.total_amount_invested || 0,
+          investment_amount_compound: modelData.investment_amount_compound || 0,
+
+          annual_investment_return_rate: modelData.annual_investment_return_rate || 5,
+          bank_savings_interest_rate: modelData.bank_savings_interest_rate || 2,
+          ltim_return_rate: modelData.ltim_return_rate || 4,
+          inflation_rate: modelData.inflation_rate || 3,
+          loan_term_years: modelData.loan_term_years || 10,
+          annual_loan_interest_rate: modelData.annual_loan_interest_rate || 6,
         }));
 
       } catch (err) {
@@ -99,13 +116,7 @@ export default function SimulationPage({ params }: SimulationPageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [model?.id, associations]);
 
-  const handleSettingsChange = (newSettings: {
-    projectionYears: number;
-    customInflationRate: number | null;
-    customMonthlyFees: number | null;
-    targetMinBalance: number;
-    includeInterest: boolean;
-  }) => {
+  const handleSettingsChange = (newSettings: FinancialSimulatorSettings) => {
     setSimulationSettings(newSettings);
   };
 
@@ -141,7 +152,7 @@ export default function SimulationPage({ params }: SimulationPageProps) {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center space-x-4">
@@ -179,33 +190,47 @@ export default function SimulationPage({ params }: SimulationPageProps) {
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
           <Card>
             <CardHeader className="pb-2">
-              <CardDescription>Starting Balance</CardDescription>
+              <CardDescription>Total Available to Invest</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {formatCurrency(model.starting_amount)}
+                {formatCurrency(
+                  simulationSettings.starting_amount +
+                  simulationSettings.immediate_assessment +
+                  simulationSettings.loan_amount +
+                  simulationSettings.liquidated_investment_principal +
+                  simulationSettings.liquidated_earnings +
+                  simulationSettings.yearly_collections
+                )}
               </div>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="pb-2">
-              <CardDescription>Monthly Fees</CardDescription>
+              <CardDescription>Investment Allocations</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {formatCurrency(simulationSettings.customMonthlyFees || model.monthly_fees)}
+                {formatCurrency(
+                  simulationSettings.total_amount_invested +
+                  simulationSettings.investment_amount_compound
+                  // LTIM is now calculated as percentage of surplus
+                )}
               </div>
-              <p className="text-sm text-gray-600">{model.housing} units</p>
+              <p className="text-sm text-gray-600">Across 3 buckets</p>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="pb-2">
-              <CardDescription>Inflation Rate</CardDescription>
+              <CardDescription>Model Items</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {(simulationSettings.customInflationRate || model.inflation_rate).toFixed(1)}%
+                {modelItems.length}
               </div>
+              <p className="text-sm text-gray-600">
+                Inflation: {simulationSettings.inflation_rate.toFixed(1)}%
+              </p>
             </CardContent>
           </Card>
           <Card>

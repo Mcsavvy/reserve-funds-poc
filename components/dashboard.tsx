@@ -2,9 +2,9 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useDatabase, useManagementCompanies, useAssociations, useModels, useLtimInvestmentRates, useSampleData } from '@/hooks/use-database';
+import { useDatabase, useManagementCompanies, useAssociations, useModels, useLtimStrategies, useSampleData, useClearData } from '@/hooks/use-database';
 import { useCurrentUser } from '@/hooks/use-local-storage';
-import { Model, ManagementCompany, Association, LtimInvestmentRate } from '@/lib/db-types';
+import { Model, ManagementCompany, Association, LtimStrategy } from '@/lib/db-types';
 import { DashboardHeader } from './dashboard-header';
 import { DashboardStats } from './dashboard-stats';
 import { QuickActions } from './quick-actions';
@@ -19,9 +19,31 @@ export function Dashboard() {
   const { items: managementCompanies, addItem: addManagementCompany, updateItem: updateManagementCompany, deleteItem: deleteManagementCompany, loading: companiesLoading } = useManagementCompanies();
   const { items: associations, addItem: addAssociation, updateItem: updateAssociation, deleteItem: deleteAssociation, loading: associationsLoading, getAssociationsByCompany } = useAssociations();
   const { items: models, addItem: addModel, updateItem: updateModel, deleteItem: deleteModel, loading: modelsLoading } = useModels();
-  const { items: ltimRates, addItem: addLtimRate, updateItem: updateLtimRate, deleteItem: deleteLtimRate, loading: ltimRatesLoading } = useLtimInvestmentRates();
+  const { items: ltimStrategies, addItem: addLtimStrategy, updateItem: updateLtimStrategy, deleteItem: deleteLtimStrategy, loading: ltimStrategiesLoading } = useLtimStrategies();
   const { seedSampleData } = useSampleData();
+  const { clearAllData } = useClearData();
   const [user] = useCurrentUser();
+
+  // Handlers with page reload
+  const handleSeedSampleData = async () => {
+    try {
+      await seedSampleData();
+      // Reload page to ensure all components refresh with new data
+      window.location.reload();
+    } catch (error) {
+      console.error('Failed to seed sample data:', error);
+    }
+  };
+
+  const handleClearAllData = async () => {
+    try {
+      await clearAllData();
+      // Reload page to ensure all components refresh with cleared data
+      window.location.reload();
+    } catch (error) {
+      console.error('Failed to clear all data:', error);
+    }
+  };
 
   // Delete handlers with business logic
   const handleDeleteManagementCompany = async (company: ManagementCompany) => {
@@ -69,13 +91,13 @@ export function Dashboard() {
     }
   };
 
-  const handleDeleteLtimRate = async (rate: LtimInvestmentRate) => {
-    if (window.confirm(`Are you sure you want to delete the LTIM rate "${rate.bucket_name}" for ${rate.state}?`)) {
+  const handleDeleteLtimStrategy = async (strategy: LtimStrategy) => {
+    if (window.confirm(`Are you sure you want to delete the LTIM strategy "${strategy.name}" for ${strategy.state}?`)) {
       try {
-        await deleteLtimRate(rate.id);
+        await deleteLtimStrategy(strategy.id);
       } catch (error) {
-        console.error('Failed to delete LTIM rate:', error);
-        alert('Failed to delete LTIM rate. Please try again.');
+        console.error('Failed to delete LTIM strategy:', error);
+        alert('Failed to delete LTIM strategy. Please try again.');
       }
     }
   };
@@ -114,7 +136,8 @@ export function Dashboard() {
             onAddManagementCompany={addManagementCompany}
             onAddAssociation={addAssociation}
             onAddModel={addModel}
-            onSeedSampleData={seedSampleData}
+            onSeedSampleData={handleSeedSampleData}
+            onClearAllData={handleClearAllData}
           />
 
           <RecentActivity models={models} />
@@ -124,27 +147,27 @@ export function Dashboard() {
           managementCompanies={managementCompanies}
           associations={associations}
           models={models}
-          ltimRates={ltimRates}
+          ltimStrategies={ltimStrategies}
           loading={{
             companies: companiesLoading,
             associations: associationsLoading,
             models: modelsLoading,
-            ltimRates: ltimRatesLoading,
+            ltimStrategies: ltimStrategiesLoading,
           }}
           onEditManagementCompany={() => {}} // These are handled internally in DataTables
           onEditAssociation={() => {}}
           onEditModel={() => {}}
-          onEditLtimRate={() => {}}
+          onEditLtimStrategy={() => {}}
           onDeleteManagementCompany={handleDeleteManagementCompany}
           onDeleteAssociation={handleDeleteAssociation}
           onDeleteModel={handleDeleteModel}
-          onDeleteLtimRate={handleDeleteLtimRate}
+          onDeleteLtimStrategy={handleDeleteLtimStrategy}
           onRunSimulation={handleRunSimulation}
           onUpdateManagementCompany={updateManagementCompany}
           onUpdateAssociation={updateAssociation}
           onUpdateModel={updateModel}
-          onUpdateLtimRate={updateLtimRate}
-          onAddLtimRate={addLtimRate}
+          onUpdateLtimStrategy={updateLtimStrategy}
+          onAddLtimStrategy={addLtimStrategy}
           getAssociationsByCompany={getAssociationsByCompany}
         />
       </div>

@@ -15,12 +15,13 @@ import {
   SimulationVersion,
   Config,
   LtimInvestmentRate,
+  LtimStrategy,
   DB_STORES,
   DBStoreNames
 } from './db-types';
 
 const DB_NAME = 'ReserveFundsDB';
-const DB_VERSION = 2;
+const DB_VERSION = 1;
 
 class ReserveFundsDB {
   private db: IDBDatabase | null = null;
@@ -95,16 +96,20 @@ class ReserveFundsDB {
 
           // Create config store
           db.createObjectStore(DB_STORES.CONFIG, { keyPath: 'id' });
-        }
 
-        // Version 2: Add LTIM Investment Rates
-        if (oldVersion < 2) {
           // Create LTIM investment rates store
           const ltimRatesStore = db.createObjectStore(DB_STORES.LTIM_INVESTMENT_RATES, { keyPath: 'id' });
           ltimRatesStore.createIndex('state', 'state', { unique: false });
           ltimRatesStore.createIndex('bucket_name', 'bucket_name', { unique: false });
           ltimRatesStore.createIndex('active', 'active', { unique: false });
           ltimRatesStore.createIndex('state_bucket', ['state', 'bucket_name'], { unique: false });
+
+          // Create LTIM strategies store
+          const ltimStrategiesStore = db.createObjectStore(DB_STORES.LTIM_STRATEGIES, { keyPath: 'id' });
+          ltimStrategiesStore.createIndex('state', 'state', { unique: false });
+          ltimStrategiesStore.createIndex('active', 'active', { unique: false });
+          ltimStrategiesStore.createIndex('created_at', 'created_at', { unique: false });
+          ltimStrategiesStore.createIndex('updated_at', 'updated_at', { unique: false });
         }
       };
     });
@@ -248,5 +253,6 @@ export type {
   SimulationRules,
   SimulationVersion,
   Config,
-  LtimInvestmentRate
+  LtimInvestmentRate,
+  LtimStrategy
 };

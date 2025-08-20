@@ -7,6 +7,7 @@ import {
   SimulationVersion,
   Config,
   LtimInvestmentRate,
+  LtimStrategy,
   DB_STORES,
   DBStoreNames,
   ManagementCompany,
@@ -330,15 +331,22 @@ export function useModels() {
 
   // Only allow models to be created for associations
   const addModelForAssociation = useCallback(async (modelData: Omit<Model, 'id'> & Partial<Pick<Model, 'id'>>) => {
-    const client = clients.find(c => c.id === modelData.client_id);
-    if (!client) {
-      throw new Error('Client not found');
+    try {
+      await ensureDbReady();
+      // Get fresh client data from database instead of relying on potentially stale hook state
+      const client = await db.get<Client>(DB_STORES.CLIENTS, modelData.client_id);
+      if (!client) {
+        throw new Error('Client not found');
+      }
+      if (!isAssociation(client)) {
+        throw new Error('Models can only be created for associations, not ' + client.type);
+      }
+      return await entityHook.addItem(modelData);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to add model';
+      throw new Error(errorMessage);
     }
-    if (!isAssociation(client)) {
-      throw new Error('Models can only be created for associations, not ' + client.type);
-    }
-    return await entityHook.addItem(modelData);
-  }, [entityHook.addItem, clients]);
+  }, [entityHook.addItem, ensureDbReady]);
 
   const getAssociationForModel = useCallback((modelId: string) => {
     const model = entityHook.items.find(m => m.id === modelId);
@@ -582,6 +590,30 @@ interface SampleData {
     fiscal_year: string;
     inv_strategy: string;
     active: boolean;
+    immediate_assessment: number;
+    loan_amount: number;
+    liquidated_investment_principal: number;
+    liquidated_earnings: number;
+    yearly_collections: number;
+    total_amount_invested: number;
+    annual_investment_return_rate: number;
+    investment_amount_compound: number;
+    bank_savings_interest_rate: number;
+
+    ltim_return_rate: number;
+    loan_term_years: number;
+    annual_loan_interest_rate: number;
+  }>;
+  ltimStrategies: Array<{
+    name: string;
+    description?: string;
+    state: string;
+    start_year: number;
+    buckets: Array<{
+      dur: number;
+      rate: number;
+    }>;
+    active: boolean;
   }>;
   modelItems: Array<{
     modelName: string;
@@ -591,6 +623,7 @@ interface SampleData {
       remaining_life: number;
       cost: number;
       is_sirs: boolean;
+      starting_year: string;
     }>;
   }>;
 }
@@ -601,6 +634,7 @@ export function useSampleData() {
   const { addItem: addAssociation } = useAssociations();
   const { addItem: addModel } = useModels();
   const { addItem: addModelItem } = useModelItems();
+  const { addItem: addLtimStrategy } = useLtimStrategies();
 
   const loadSampleData = useCallback(async (): Promise<SampleData> => {
     try {
@@ -620,6 +654,20 @@ export function useSampleData() {
       const sampleData = await loadSampleData();
       const currentYear = new Date().getFullYear().toString();
       const timestamp = Date.now();
+
+      // Create LTIM strategies first
+      const createdStrategies = new Map<string, any>();
+      for (const strategyData of sampleData.ltimStrategies) {
+        const strategy = await addLtimStrategy({
+          name: strategyData.name,
+          description: strategyData.description,
+          state: strategyData.state,
+          start_year: strategyData.start_year,
+          buckets: JSON.stringify(strategyData.buckets),
+          active: strategyData.active,
+        });
+        createdStrategies.set(`${strategyData.state}-${strategyData.name}`, strategy);
+      }
 
       // Create management companies
       const createdCompanies = new Map<string, any>();
@@ -679,6 +727,23 @@ export function useSampleData() {
           fiscal_year: modelData.fiscal_year === 'current' ? currentYear : modelData.fiscal_year,
           inv_strategy: modelData.inv_strategy,
           active: modelData.active,
+          immediate_assessment: modelData.immediate_assessment,
+          loan_amount: modelData.loan_amount,
+          liquidated_investment_principal: modelData.liquidated_investment_principal,
+          liquidated_earnings: modelData.liquidated_earnings,
+          yearly_collections: modelData.yearly_collections,
+          total_amount_invested: modelData.total_amount_invested,
+          annual_investment_return_rate: modelData.annual_investment_return_rate,
+          investment_amount_compound: modelData.investment_amount_compound,
+          bank_savings_interest_rate: modelData.bank_savings_interest_rate,
+
+          ltim_return_rate: modelData.ltim_return_rate,
+          loan_term_years: modelData.loan_term_years,
+          annual_loan_interest_rate: modelData.annual_loan_interest_rate,
+          // LTIM Strategy Settings - add defaults
+          ltim_enabled: false,
+          ltim_percentage: 0,
+          ltim_start_year: 0,
           updated_at: timestamp,
           created_at: timestamp,
         });
@@ -701,6 +766,7 @@ export function useSampleData() {
             remaining_life: itemData.remaining_life,
             cost: itemData.cost,
             is_sirs: itemData.is_sirs,
+            starting_year: itemData.starting_year || model.fiscal_year,
           });
         }
       }
@@ -717,4 +783,123 @@ export function useSampleData() {
   }, [addManagementCompany, addAssociation, addModel, addModelItem, loadSampleData]);
 
   return { seedSampleData, loadSampleData };
+}
+
+export function useLtimStrategies() {
+  const entityHook = useEntity<LtimStrategy>(DB_STORES.LTIM_STRATEGIES);
+  
+  const ensureDbReady = useCallback(async () => {
+    if (!databaseStateManager.isReady()) {
+      await databaseStateManager.initialize();
+    }
+  }, []);
+  
+  const getStrategiesByState = useCallback((state: string) => {
+    return entityHook.items.filter(strategy => strategy.state === state);
+  }, [entityHook.items]);
+
+  const getActiveStrategies = useCallback(() => {
+    return entityHook.items.filter(strategy => strategy.active);
+  }, [entityHook.items]);
+
+  const addLtimStrategy = useCallback(async (strategyData: Omit<LtimStrategy, 'id' | 'created_at' | 'updated_at'> & Partial<Pick<LtimStrategy, 'id'>>) => {
+    const timestamp = Date.now();
+    const newStrategy = {
+      ...strategyData,
+      created_at: timestamp,
+      updated_at: timestamp,
+    };
+    return await entityHook.addItem(newStrategy);
+  }, [entityHook]);
+
+  const updateLtimStrategy = useCallback(async (strategy: LtimStrategy) => {
+    const updatedStrategy = {
+      ...strategy,
+      updated_at: Date.now(),
+    };
+    return await entityHook.updateItem(updatedStrategy);
+  }, [entityHook]);
+
+  // Get all states that have LTIM strategies configured
+  const getStatesWithStrategies = useCallback(() => {
+    const states = new Set<string>();
+    entityHook.items.forEach(strategy => {
+      if (strategy.active) {
+        states.add(strategy.state);
+      }
+    });
+    return Array.from(states).sort();
+  }, [entityHook.items]);
+
+  // Get strategies for a specific state
+  const getStrategiesForState = useCallback((state: string) => {
+    return entityHook.items
+      .filter(strategy => strategy.state === state && strategy.active)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [entityHook.items]);
+
+  return {
+    ...entityHook,
+    addItem: addLtimStrategy,
+    updateItem: updateLtimStrategy,
+    getStrategiesByState,
+    getActiveStrategies,
+    getStatesWithStrategies,
+    getStrategiesForState,
+  };
+}
+
+// Utility hook for clearing all data
+export function useClearData() {
+  const { refresh: refreshClients } = useClients();
+  const { refresh: refreshModels } = useModels();
+  const { refresh: refreshModelItems } = useModelItems();
+  const { refresh: refreshLtimRates } = useLtimInvestmentRates();
+  const { refresh: refreshLtimStrategies } = useLtimStrategies();
+
+  const ensureDbReady = useCallback(async () => {
+    if (!databaseStateManager.isReady()) {
+      await databaseStateManager.initialize();
+    }
+  }, []);
+
+  const clearAllData = useCallback(async () => {
+    try {
+      await ensureDbReady();
+      
+      // Clear all relevant stores
+      await Promise.all([
+        db.clear(DB_STORES.CLIENTS), // This clears both management companies and associations
+        db.clear(DB_STORES.MODELS),
+        db.clear(DB_STORES.MODEL_ITEMS),
+        db.clear(DB_STORES.LTIM_INVESTMENT_RATES),
+        db.clear(DB_STORES.LTIM_STRATEGIES),
+        // Also clear related data to maintain database consistency
+        db.clear(DB_STORES.SIMULATION_VERSIONS),
+        db.clear(DB_STORES.SIMULATION_ACTUAL),
+        db.clear(DB_STORES.SIMULATION_SPLITS),
+        db.clear(DB_STORES.SIMULATION_SPLITS_LTIM),
+        db.clear(DB_STORES.SIMULATION_DEFICIT),
+        db.clear(DB_STORES.SIMULATION_DEFICIT_LTIM),
+        db.clear(DB_STORES.SIMULATION_RULES),
+        db.clear(DB_STORES.MODEL_CLIENT_RATES),
+      ]);
+
+      // Refresh all hook states to reflect the cleared data
+      await Promise.all([
+        refreshClients(),
+        refreshModels(),
+        refreshModelItems(), 
+        refreshLtimRates(),
+        refreshLtimStrategies(),
+      ]);
+
+      console.log('All data cleared successfully');
+    } catch (err) {
+      console.error('Failed to clear all data:', err);
+      throw err;
+    }
+  }, [ensureDbReady, refreshClients, refreshModels, refreshModelItems, refreshLtimRates, refreshLtimStrategies]);
+
+  return { clearAllData };
 }
