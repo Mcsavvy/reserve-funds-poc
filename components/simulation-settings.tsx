@@ -33,6 +33,9 @@ export type FinancialSimulatorSettings = {
   total_amount_invested: number;
   investment_amount_compound: number;
 
+  // Monthly Fees
+  monthly_fees: number;
+  maximum_fee_increase: number;
   
   // Rates & Returns
   annual_investment_return_rate: number;
@@ -82,6 +85,10 @@ export function SimulationSettings({
       liquidated_earnings: model.liquidated_earnings || 0,
       yearly_collections: model.yearly_collections || 0,
       
+      // Monthly Fees
+      monthly_fees: model.monthly_fees || 0,
+      maximum_fee_increase: model.maximum_fee_increase || 0,
+      
       // Investment Allocations (from model)
       total_amount_invested: model.total_amount_invested || 0,
       investment_amount_compound: model.investment_amount_compound || 0,
@@ -91,8 +98,7 @@ export function SimulationSettings({
       annual_investment_return_rate: model.annual_investment_return_rate || 5,
       bank_savings_interest_rate: model.bank_savings_interest_rate || 2,
       ltim_return_rate: model.ltim_return_rate || 4,
-      inflation_rate: model.inflation_rate || 3,
-      
+      inflation_rate: model.inflation_rate || 3,      
       // Loans (from model)
       loan_term_years: model.loan_term_years || 10,
       annual_loan_interest_rate: model.annual_loan_interest_rate || 6,
@@ -247,6 +253,31 @@ export function SimulationSettings({
                   min="0"
                   value={localSettings.yearly_collections}
                   onChange={(e) => handleInputChange('yearly_collections', parseFloat(e.target.value) || 0)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="monthly_fees">Monthly Fees per Unit ($)</Label>
+                <Input
+                  id="monthly_fees"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={localSettings.monthly_fees}
+                  onChange={(e) => handleInputChange('monthly_fees', parseFloat(e.target.value) || 0)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="maximum_fee_increase">Maximum Fee Increase (%)</Label>
+                <Input
+                  id="maximum_fee_increase"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.1"
+                  value={localSettings.maximum_fee_increase}
+                  onChange={(e) => handleInputChange('maximum_fee_increase', parseFloat(e.target.value) || 0)}
                 />
               </div>
             </div>

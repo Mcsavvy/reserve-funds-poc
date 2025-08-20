@@ -46,9 +46,9 @@ export function calculateReserveProjections(
     const projectionYear = currentYear + year;
     const startingBalance = runningBalance;
     
-    // Calculate income (monthly fees * 12 months, adjusted for inflation)
+    // Calculate income (monthly fees * number of units * 12 months, not adjusted for inflation)
     const inflationMultiplier = Math.pow(1 + model.inflation_rate / 100, year);
-    const annualIncome = (model.monthly_fees * 12) * inflationMultiplier;
+    const annualIncome = model.monthly_fees * model.housing * 12;
     
     // Add interest from bank
     const interestIncome = startingBalance * (model.bank_int_rate / 100);

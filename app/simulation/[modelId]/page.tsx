@@ -44,6 +44,9 @@ export default function SimulationPage({ params }: SimulationPageProps) {
     total_amount_invested: 0,
     investment_amount_compound: 0,
 
+    monthly_fees: 0,
+    maximum_fee_increase: 0,
+
     annual_investment_return_rate: 5,
     bank_savings_interest_rate: 2,
     ltim_return_rate: 4,
@@ -84,6 +87,9 @@ export default function SimulationPage({ params }: SimulationPageProps) {
           yearly_collections: modelData.yearly_collections || 0,
           total_amount_invested: modelData.total_amount_invested || 0,
           investment_amount_compound: modelData.investment_amount_compound || 0,
+
+          monthly_fees: modelData.monthly_fees || 0,
+          maximum_fee_increase: modelData.maximum_fee_increase || 0,
 
           annual_investment_return_rate: modelData.annual_investment_return_rate || 5,
           bank_savings_interest_rate: modelData.bank_savings_interest_rate || 2,

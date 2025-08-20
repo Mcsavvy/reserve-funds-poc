@@ -87,12 +87,19 @@ export function SimulationResults({ model, modelItems, settings }: SimulationRes
   );
 
   // Chart data preparation for financial simulator
-  const balanceChartData = projections.map(p => ({
-    year: p.year,
-    remainingAmount: p.remainingAmount,
-    totalAvailable: p.totalAvailableToInvest,
-    ltimAccumulated: p.projectedAccumulatedLTIMFunds,
-  }));
+  const balanceChartData = projections.map((p, index) => {
+    // Calculate annual collection fees (monthly fees * number of units * 12, not adjusted for inflation)
+    const annualCollectionFees = adjustedModel.monthly_fees * adjustedModel.housing * 12;
+    
+    return {
+      year: p.year,
+      remainingAmount: p.remainingAmount,
+      totalAvailable: p.totalAvailableToInvest,
+      ltimAccumulated: p.projectedAccumulatedLTIMFunds,
+      annualCollectionFees: annualCollectionFees,
+      expenses: p.expenses,
+    };
+  });
 
   const financialFlowData = projections.map(p => ({
     year: p.year,
@@ -237,40 +244,50 @@ export function SimulationResults({ model, modelItems, settings }: SimulationRes
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
+          {/* Yearly Balance Chart */}
           <Card>
             <CardHeader>
-              <CardTitle>Remaining Amount Over Time</CardTitle>
+              <CardTitle>Yearly Balance Overview</CardTitle>
               <CardDescription>
-                Financial projection showing remaining amount and LTIM accumulation
+                Yearly balance and LTIM accumulation over time
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="h-80">
                 <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={balanceChartData}>
-                    <defs>
-                      <linearGradient id="remainingGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
+                  <LineChart data={balanceChartData}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="year" />
                     <YAxis tickFormatter={(value) => formatCurrency(value)} />
                     <Tooltip 
-                      formatter={(value: number, name: string) => [
+                      formatter={(value: number, name: string, props: any) => [
                         formatCurrency(value), 
-                        name === 'remainingAmount' ? 'Remaining Amount' : 
+                        name === 'remainingAmount' ? 'Yearly Balance' : 
                         name === 'ltimAccumulated' ? 'LTIM Accumulated' : 'Total Available'
                       ]}
-                      labelFormatter={(label) => `Year ${label}`}
+                      labelFormatter={(label: string, payload: any) => {
+                        if (payload && payload.length > 0) {
+                          const data = payload[0].payload;
+                          return (
+                            <>
+                              <p className="font-medium">{`Year ${label}`}</p>
+                              <p className="text-sm text-gray-600 mt-1">
+                                <p>Collection Fees: {formatCurrency(data.annualCollectionFees)}</p>
+                                <p>Annual Expenses: {formatCurrency(data.expenses)}</p>
+                              </p>
+                            </>
+                          );
+                        }
+                        return `Year ${label}`;
+                      }}
                     />
-                    <Area 
+                    <Line 
                       type="monotone" 
                       dataKey="remainingAmount" 
                       stroke="#3b82f6" 
-                      strokeWidth={2}
-                      fill="url(#remainingGradient)" 
+                      strokeWidth={3}
+                      dot={false}
+                      name="remainingAmount"
                     />
                     <Line 
                       type="monotone" 
@@ -278,8 +295,42 @@ export function SimulationResults({ model, modelItems, settings }: SimulationRes
                       stroke="#10b981" 
                       strokeWidth={2}
                       dot={false}
+                      name="ltimAccumulated"
                     />
-                  </ComposedChart>
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Annual Collection Fees Chart */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Annual Collection Fees</CardTitle>
+              <CardDescription>
+                Monthly fees collected per year ({adjustedModel.housing} units × ${adjustedModel.monthly_fees}/month × 12 months)
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="h-60">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={balanceChartData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="year" />
+                    <YAxis tickFormatter={(value) => formatCurrency(value)} />
+                    <Tooltip 
+                      formatter={(value: number) => [formatCurrency(value), 'Annual Collection Fees']}
+                      labelFormatter={(label) => `Year ${label}`}
+                    />
+                    <Line 
+                      type="monotone" 
+                      dataKey="annualCollectionFees" 
+                      stroke="#f59e0b" 
+                      strokeWidth={3}
+                      dot={false}
+                      name="annualCollectionFees"
+                    />
+                  </LineChart>
                 </ResponsiveContainer>
               </div>
             </CardContent>

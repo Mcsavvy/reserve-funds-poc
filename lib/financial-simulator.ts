@@ -173,7 +173,7 @@ export function calculateAnnualExpensesFromItems(
     }
     
     // If redundancy is 0 or 1, it's a one-time replacement
-    if (item.redundancy <= 1) {
+    if (false) {
       if (projectionYear === firstReplacementYear) {
         // Apply inflation from item's starting year to replacement year
         const yearsOfInflation = projectionYear - itemStartingYear;
@@ -313,11 +313,13 @@ export function calculateFinancialProjections(
       : 0;
     
     // Calculate remaining amount
+    // FE Remaining Amount = Total Available To Invest + Net Earnings + Compound Value of Savings + 
+    // Projected LTIM Earnings - Loss in Purchasing Power - Spending - Loan Payments
     const remainingAmount = 
       totalAvailableToInvest +
       netEarnings +
       compoundValueOfSavings +
-      totalInvestmentEarnings -
+      projectedLTIMEarnings -
       lossInPurchasingPower -
       expenses -
       loanPayments;

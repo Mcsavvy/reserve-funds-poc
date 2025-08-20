@@ -48,6 +48,7 @@ export interface Model {
   inflation_rate: number;
   monthly_fees: number;
   monthly_fees_rate: number;
+  maximum_fee_increase: number;
   cushion_fund: number;
   period: number;
   bank_rate: number;

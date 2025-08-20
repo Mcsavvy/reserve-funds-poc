@@ -553,7 +553,7 @@ export function useLtimInvestmentRates() {
 interface SampleData {
   managementCompanies: Array<{
     company: string;
-    company_type: 'property' | 'reserve';
+    company_type: "property" | "reserve";
     email: string;
     phone: string;
     address: string;
@@ -564,7 +564,7 @@ interface SampleData {
   }>;
   associations: Array<{
     association: string;
-    company_type: 'property' | 'reserve';
+    company_type: "property" | "reserve";
     email: string;
     phone: string;
     address: string;
@@ -582,6 +582,7 @@ interface SampleData {
     inflation_rate: number;
     monthly_fees: number;
     monthly_fees_rate: number;
+    maximum_fee_increase: number;
     cushion_fund: number;
     period: number;
     bank_rate: number;
@@ -719,6 +720,7 @@ export function useSampleData() {
           inflation_rate: modelData.inflation_rate,
           monthly_fees: modelData.monthly_fees,
           monthly_fees_rate: modelData.monthly_fees_rate,
+          maximum_fee_increase: modelData.maximum_fee_increase,
           cushion_fund: modelData.cushion_fund,
           period: modelData.period,
           bank_rate: modelData.bank_rate,
