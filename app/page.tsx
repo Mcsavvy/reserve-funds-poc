@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { ModelParameters, Expense, defaultParameters, defaultExpenses } from '@/lib/types';
-import { calculateProjections } from '@/lib/financial-calculator';
+import { ModelParameters, Expense, defaultParameters, defaultExpenses, OptimizationResult } from '@/lib/types';
+import { calculateProjections, optimizeFees } from '@/lib/financial-calculator';
 import { ParameterForm } from '@/components/parameter-form';
 import { ExpenseManager } from '@/components/expense-manager';
 import { ProjectionTable } from '@/components/projection-table';
@@ -10,19 +10,47 @@ import { ProjectionCharts } from '@/components/projection-charts';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Calculator, TrendingUp, Settings, DollarSign } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Calculator, TrendingUp, Settings, DollarSign, Zap } from 'lucide-react';
 
 export default function HomePage() {
   const [parameters, setParameters] = useState<ModelParameters>(defaultParameters);
   const [expenses, setExpenses] = useState<Expense[]>(defaultExpenses);
+  const [optimizationResult, setOptimizationResult] = useState<OptimizationResult | null>(null);
+  const [isOptimizing, setIsOptimizing] = useState(false);
 
   // Memoize callbacks to prevent infinite re-renders
   const handleParametersChange = React.useCallback((newParameters: ModelParameters) => {
     setParameters(newParameters);
+    // Clear optimization when parameters change
+    setOptimizationResult(null);
   }, []);
 
   const handleExpensesChange = React.useCallback((newExpenses: Expense[]) => {
     setExpenses(newExpenses);
+    // Clear optimization when expenses change
+    setOptimizationResult(null);
+  }, []);
+
+  // Handle fee optimization
+  const handleOptimizeFees = React.useCallback(async () => {
+    setIsOptimizing(true);
+    try {
+      // Use setTimeout to allow UI to update before heavy calculation
+      setTimeout(() => {
+        const result = optimizeFees(parameters, expenses);
+        setOptimizationResult(result);
+        setIsOptimizing(false);
+      }, 100);
+    } catch (error) {
+      console.error('Optimization failed:', error);
+      setIsOptimizing(false);
+    }
+  }, [parameters, expenses]);
+
+  // Clear optimization
+  const handleClearOptimization = React.useCallback(() => {
+    setOptimizationResult(null);
   }, []);
 
   // Calculate projections whenever parameters or expenses change
@@ -35,7 +63,8 @@ export default function HomePage() {
     }
   }, [parameters, expenses]);
 
-  const projections = projectionResults?.projections || [];
+  // Use optimization results if available, otherwise use regular projections
+  const projections = optimizationResult?.projections || projectionResults?.projections || [];
 
   // Calculate some key metrics
   const finalBalance = projections[projections.length - 1]?.closingBalance || 0;
@@ -124,6 +153,60 @@ export default function HomePage() {
                 <Badge variant={yearsWithNegativeBalance > 0 ? "destructive" : "default"}>
                   {yearsWithNegativeBalance > 0 ? "Warning" : "Good"}
                 </Badge>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Optimization Controls */}
+        <div className="mb-6">
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div>
+                    <h3 className="text-lg font-semibold">Fee Optimization</h3>
+                    <p className="text-sm text-muted-foreground">
+                      {optimizationResult 
+                        ? `Optimized fees applied • Savings: ${(optimizationResult.totalSavings / 1000).toFixed(0)}K over ${parameters.horizon} years`
+                        : 'Optimize monthly fees to minimize costs while maintaining positive balances'
+                      }
+                    </p>
+                  </div>
+                  {optimizationResult && (
+                    <Badge variant="default" className="bg-green-100 text-green-800">
+                      <Zap className="h-3 w-3 mr-1" />
+                      Optimized
+                    </Badge>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  {optimizationResult && (
+                    <Button 
+                      variant="outline" 
+                      onClick={handleClearOptimization}
+                    >
+                      Use Original Fees
+                    </Button>
+                  )}
+                  <Button 
+                    onClick={handleOptimizeFees}
+                    disabled={isOptimizing}
+                    className="min-w-[140px]"
+                  >
+                    {isOptimizing ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Optimizing...
+                      </>
+                    ) : (
+                      <>
+                        <Zap className="h-4 w-4 mr-2" />
+                        Optimize Monthly Fees
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>

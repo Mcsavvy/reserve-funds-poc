@@ -45,6 +45,15 @@ export interface ProjectionResults {
   projections: ProjectionRow[];
 }
 
+// Fee optimization types
+export type FeeSchedule = number[]; // Array of annual fees, length === horizon
+
+export interface OptimizationResult {
+  schedule: FeeSchedule;
+  projections: ProjectionRow[];
+  totalSavings: number; // Total amount saved compared to inflation-based fees
+}
+
 // Default parameters from the Excel model
 export const defaultParameters: ModelParameters = {
   horizon: 30,
