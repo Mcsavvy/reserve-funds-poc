@@ -92,7 +92,8 @@ export function runWithFeeSchedule(
     const loanRepayments = sumProductExpenses(expenses, year, parameters, 'range');
     
     // Collections without Safety Net (G column) - but capped by max fee increase
-    const uncappedCollections = baseMaintenanceInflated + reserveContribution + loanRepayments;
+    // Note: Loan repayments are paid from reserves, not from collections
+    const uncappedCollections = baseMaintenanceInflated + reserveContribution;
     
     // Calculate maximum allowed collections based on previous year's collections
     let maxAllowedCollections = uncappedCollections; // Default: no cap
@@ -101,8 +102,8 @@ export function runWithFeeSchedule(
       maxAllowedCollections = previousCollections * (1 + parameters.maxFeeIncreasePercentage / 100);
     }
     
-    // Apply the cap
-    const collectionsWithoutSafetyNet = Math.min(uncappedCollections, maxAllowedCollections);
+    // Apply the cap and ensure collections are never negative
+    const collectionsWithoutSafetyNet = Math.max(0, Math.min(uncappedCollections, maxAllowedCollections));
     
     // Calculate shortfall if collections were capped
     const collectionShortfall = uncappedCollections - collectionsWithoutSafetyNet;
@@ -184,7 +185,8 @@ export function calculateProjections(
     const loanRepayments = sumProductExpenses(expenses, year, parameters, 'range');
     
     // Collections without Safety Net (G column) - but capped by max fee increase
-    const uncappedCollections = baseMaintenanceInflated + reserveContribution + loanRepayments;
+    // Note: Loan repayments are paid from reserves, not from collections
+    const uncappedCollections = baseMaintenanceInflated + reserveContribution;
     
     // Calculate maximum allowed collections based on previous year's collections
     let maxAllowedCollections = uncappedCollections; // Default: no cap
@@ -193,8 +195,8 @@ export function calculateProjections(
       maxAllowedCollections = previousCollections * (1 + parameters.maxFeeIncreasePercentage / 100);
     }
     
-    // Apply the cap
-    const collectionsWithoutSafetyNet = Math.min(uncappedCollections, maxAllowedCollections);
+    // Apply the cap and ensure collections are never negative
+    const collectionsWithoutSafetyNet = Math.max(0, Math.min(uncappedCollections, maxAllowedCollections));
     
     // Calculate shortfall if collections were capped
     const collectionShortfall = uncappedCollections - collectionsWithoutSafetyNet;
