@@ -47,7 +47,7 @@ export function ProjectionTable({ projections }: ProjectionTableProps) {
                   <TableHead className="min-w-[60px]">Year</TableHead>
                   <TableHead className="min-w-[120px]">Opening Balance</TableHead>
                   <TableHead className="min-w-[140px]">Base Maintenance (Inflated)</TableHead>
-                  <TableHead className="min-w-[140px]">Future Expenses</TableHead>
+                  <TableHead className="min-w-[140px]">Expenses</TableHead>
                   <TableHead className="min-w-[130px]">Reserve Contribution</TableHead>
                   <TableHead className="min-w-[120px]">Loan Repayments</TableHead>
                   <TableHead className="min-w-[140px]">Collections w/o Safety Net</TableHead>
