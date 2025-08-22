@@ -130,6 +130,7 @@ export function runWithFeeSchedule(
     
     projections.push({
       year,
+      fiscalYear: parameters.fiscalYear + year - 1,
       openingBalance,
       baseMaintenanceInflated,
       futureExpensesInYear,
@@ -221,6 +222,7 @@ export function calculateProjections(
     
     projections.push({
       year,
+      fiscalYear: parameters.fiscalYear + year - 1,
       openingBalance,
       baseMaintenanceInflated,
       futureExpensesInYear,

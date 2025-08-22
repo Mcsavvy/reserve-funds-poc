@@ -96,11 +96,11 @@ export default function HomePage() {
               <div className="flex items-center">
                 <DollarSign className="h-4 w-4 text-muted-foreground" />
                 <div className="ml-2">
-                  <p className={`text-2xl font-bold ${finalBalance > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  <p className="text-2xl font-bold text-green-600">
                     ${(finalBalance / 1000).toFixed(0)}K
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    Final Balance (Year {parameters.horizon})
+                    Final Balance ({parameters.fiscalYear + parameters.horizon - 1})
                   </p>
                 </div>
               </div>

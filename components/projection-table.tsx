@@ -69,7 +69,7 @@ export function ProjectionTable({ projections }: ProjectionTableProps) {
                     <TableRow key={row.year} className={isNegativeBalance ? 'bg-red-50' : isFeesCapped ? 'bg-yellow-50' : ''}>
                       <TableCell className="font-medium">
                         <div className="flex items-center gap-2">
-                          {row.year}
+                          {row.fiscalYear}
                           {hasLargeExpense && (
                             <Badge variant="destructive" className="text-xs">
                               Expense
@@ -126,7 +126,7 @@ export function ProjectionTable({ projections }: ProjectionTableProps) {
               <div className="text-2xl font-bold text-green-600">
                 {formatCurrency(projections[projections.length - 1]?.closingBalance || 0)}
               </div>
-              <p className="text-xs text-muted-foreground">Final Balance (Year {projections.length})</p>
+              <p className="text-xs text-muted-foreground">Final Balance ({projections[projections.length - 1]?.fiscalYear || 'N/A'})</p>
             </CardContent>
           </Card>
           

@@ -21,6 +21,7 @@ const parameterSchema = z.object({
   safetyNetPercentage: z.number().min(0).max(100),
   openingBalance: z.number(),
   maxFeeIncreasePercentage: z.number().min(0).max(100),
+  fiscalYear: z.number().min(2000).max(2100),
 });
 
 type ParameterFormData = z.infer<typeof parameterSchema>;
@@ -61,6 +62,28 @@ export function ParameterForm({ parameters, onParametersChange }: ParameterFormP
       <CardContent>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <FormField
+              control={form.control}
+              name="fiscalYear"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Starting Fiscal Year</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      {...field}
+                      onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                      onBlur={handleFormChange}
+                      min={2000}
+                      max={2100}
+                    />
+                  </FormControl>
+                  <FormDescription>The calendar year when projections begin</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
             <FormField
               control={form.control}
               name="horizon"

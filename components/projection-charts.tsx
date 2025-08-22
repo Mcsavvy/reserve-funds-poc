@@ -38,7 +38,7 @@ const formatTooltipValue = (value: any, name: string) => {
 };
 
 // Custom label formatter for the X-axis
-const formatXAxisLabel = (value: any) => `Year ${value}`;
+const formatXAxisLabel = (value: any) => `${value}`;
 
 export function ProjectionCharts({ projections }: ProjectionChartsProps) {
   if (projections.length === 0) {
@@ -82,7 +82,7 @@ export function ProjectionCharts({ projections }: ProjectionChartsProps) {
                 <LineChart data={projections}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis 
-                    dataKey="year" 
+                    dataKey="fiscalYear" 
                     tickFormatter={formatXAxisLabel}
                   />
                   <YAxis tickFormatter={(value) => `$${(value / 1000).toFixed(0)}K`} />
@@ -123,7 +123,7 @@ export function ProjectionCharts({ projections }: ProjectionChartsProps) {
                 <ComposedChart data={projections}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis 
-                    dataKey="year" 
+                    dataKey="fiscalYear" 
                     tickFormatter={formatXAxisLabel}
                   />
                   <YAxis tickFormatter={(value) => `$${(value / 1000).toFixed(0)}K`} />
@@ -160,7 +160,7 @@ export function ProjectionCharts({ projections }: ProjectionChartsProps) {
                 <AreaChart data={projections}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis 
-                    dataKey="year" 
+                    dataKey="fiscalYear" 
                     tickFormatter={formatXAxisLabel}
                   />
                   <YAxis tickFormatter={(value) => `$${(value / 1000).toFixed(0)}K`} />
@@ -204,7 +204,7 @@ export function ProjectionCharts({ projections }: ProjectionChartsProps) {
                 <ComposedChart data={projections}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis 
-                    dataKey="year" 
+                    dataKey="fiscalYear" 
                     tickFormatter={formatXAxisLabel}
                   />
                   <YAxis tickFormatter={(value) => `$${(value / 1000).toFixed(0)}K`} />

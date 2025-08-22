@@ -10,6 +10,7 @@ export interface ModelParameters {
   safetyNetPercentage: number; // Safety net as percentage
   openingBalance: number; // Starting balance
   maxFeeIncreasePercentage: number; // Maximum percentage increase in annual fees
+  fiscalYear: number; // Starting fiscal year for projections
 }
 
 export interface Expense {
@@ -21,7 +22,8 @@ export interface Expense {
 }
 
 export interface ProjectionRow {
-  year: number;
+  year: number; // Relative year (1, 2, 3...)
+  fiscalYear: number; // Actual calendar year
   openingBalance: number;
   baseMaintenanceInflated: number;
   futureExpensesInYear: number;
@@ -65,6 +67,7 @@ export const defaultParameters: ModelParameters = {
   safetyNetPercentage: 10,
   openingBalance: 0,
   maxFeeIncreasePercentage: 15, // Default: allow up to 15% annual fee increase
+  fiscalYear: new Date().getFullYear(), // Default: current year
 };
 
 // Default expenses from the Excel model
