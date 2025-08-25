@@ -10,6 +10,7 @@ export const ModelSchema = z.object({
   startingAmount: z.number().min(0, 'Starting amount must be non-negative'),
   fiscalYear: z.number().min(1900, 'Invalid fiscal year').max(2200, 'Fiscal year must be before 2200'),
   monthlyReserveFeesPerHousingUnit: z.number().min(0, 'Monthly reserve fees must be non-negative'),
+  minimumCollectionFee: z.number().min(0, 'Minimum collection fee must be non-negative'),
   inflationRate: z.number().min(0, 'Inflation rate must be non-negative').max(100, 'Inflation rate must be less than 100'),
   maximumAllowableFeeIncrease: z.number().min(0, 'Maximum fee increase must be non-negative').max(100, 'Maximum fee increase must be less than 100'),
   bankInterestRate: z.number().min(0, 'Bank interest rate must be non-negative').max(100, 'Bank interest rate must be less than 100'),
@@ -45,7 +46,7 @@ export type Expense = z.infer<typeof ExpenseSchema>;
 
 // RxDB schema for Model collection
 export const modelRxSchema: RxJsonSchema<Model> = {
-  version: 0,
+  version: 1,
   primaryKey: 'id',
   type: 'object',
   properties: {
@@ -76,6 +77,10 @@ export const modelRxSchema: RxJsonSchema<Model> = {
       multipleOf: 1,
     },
     monthlyReserveFeesPerHousingUnit: {
+      type: 'number',
+      minimum: 0,
+    },
+    minimumCollectionFee: {
       type: 'number',
       minimum: 0,
     },
@@ -122,6 +127,7 @@ export const modelRxSchema: RxJsonSchema<Model> = {
     'startingAmount',
     'fiscalYear',
     'monthlyReserveFeesPerHousingUnit',
+    'minimumCollectionFee',
     'inflationRate',
     'maximumAllowableFeeIncrease',
     'bankInterestRate',

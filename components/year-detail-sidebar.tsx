@@ -34,6 +34,7 @@ const YearAdjustmentSchema = z.object({
   collections: z.number().min(0, 'Collections cannot be negative'),
   expenses: z.number().min(0, 'Expenses cannot be negative'),
   safetyNet: z.number().min(0, 'Safety net cannot be negative'),
+  monthlyFee: z.number().min(0, 'Monthly fee cannot be negative'),
 });
 
 type YearAdjustmentData = z.infer<typeof YearAdjustmentSchema>;
@@ -54,6 +55,9 @@ export function YearDetailSidebar({
   onYearAdjustment 
 }: YearDetailSidebarProps) {
 
+  // Calculate the current monthly fee for this year
+  const currentMonthlyFee = yearProjection.collections / 12 / (model.housingUnits || 1);
+
   const form = useForm<YearAdjustmentData>({
     resolver: zodResolver(YearAdjustmentSchema),
     defaultValues: {
@@ -61,37 +65,45 @@ export function YearDetailSidebar({
       collections: yearProjection.collections,
       expenses: yearProjection.expenses,
       safetyNet: yearProjection.safetyNet,
+      monthlyFee: currentMonthlyFee,
     },
   });
 
   // Reset form when yearProjection changes
   useEffect(() => {
+    const currentMonthlyFeeForReset = yearProjection.collections / 12 / (model.housingUnits || 1);
     const defaultValues = {
       openingBalance: yearProjection.openingBalance,
       collections: yearProjection.collections,
       expenses: yearProjection.expenses,
       safetyNet: yearProjection.safetyNet,
+      monthlyFee: currentMonthlyFeeForReset,
     };
     form.reset(defaultValues);
-  }, [yearProjection, form]);
+  }, [yearProjection, form, model.housingUnits]);
 
   // Watch form values to update adjusted projection
   const watchedValues = form.watch();
   
   // Calculate adjusted projection without causing re-renders
   const adjustedProjection = useMemo(() => {
-    const { openingBalance, collections, expenses, safetyNet } = watchedValues;
-    const closingBalance = openingBalance + collections - expenses - safetyNet;
+    const { openingBalance, collections, expenses, safetyNet, monthlyFee } = watchedValues;
+    
+    // Calculate collections from monthly fee if it was changed
+    const calculatedCollections = monthlyFee * 12 * (model.housingUnits || 1);
+    const actualCollections = Math.abs(calculatedCollections - collections) < 0.01 ? collections : calculatedCollections;
+    
+    const closingBalance = openingBalance + actualCollections - expenses - safetyNet;
     
     return {
       ...yearProjection,
       openingBalance,
-      collections,
+      collections: actualCollections,
       expenses,
       safetyNet,
       closingBalance,
     };
-  }, [watchedValues, yearProjection]);
+  }, [watchedValues, yearProjection, model.housingUnits]);
 
   const handleApplyAdjustments = () => {
     onYearAdjustment(yearProjection.year, form.getValues());
@@ -116,6 +128,7 @@ export function YearDetailSidebar({
     collections: yearProjection.collections,
     expenses: yearProjection.expenses,
     safetyNet: yearProjection.safetyNet,
+    monthlyFee: currentMonthlyFee,
   });
   
   return (
@@ -418,16 +431,45 @@ export function YearDetailSidebar({
 
                       <FormField
                         control={form.control}
-                        name="collections"
+                        name="monthlyFee"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Collections ($)</FormLabel>
+                            <FormLabel>Monthly Fee per Unit ($)</FormLabel>
                             <FormControl>
                               <Input
                                 type="number"
                                 step="0.01"
                                 {...field}
-                                onChange={e => field.onChange(+e.target.value)}
+                                onChange={e => {
+                                  field.onChange(+e.target.value);
+                                  // Update collections when monthly fee changes
+                                  const newCollections = (+e.target.value) * 12 * (model.housingUnits || 1);
+                                  form.setValue('collections', newCollections);
+                                }}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="collections"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Total Collections ($)</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                {...field}
+                                onChange={e => {
+                                  field.onChange(+e.target.value);
+                                  // Update monthly fee when collections change
+                                  const newMonthlyFee = (+e.target.value) / 12 / (model.housingUnits || 1);
+                                  form.setValue('monthlyFee', newMonthlyFee);
+                                }}
                               />
                             </FormControl>
                             <FormMessage />
@@ -482,6 +524,11 @@ export function YearDetailSidebar({
                       <p className="text-xs text-muted-foreground mt-1">
                         Opening Balance + Collections - Expenses - Safety Net
                       </p>
+                      {model.minimumCollectionFee > 0 && (
+                        <p className="text-xs text-blue-600 mt-2">
+                          💡 Minimum collection fee: {formatCurrency(model.minimumCollectionFee)}/month
+                        </p>
+                      )}
                     </div>
                   </CardContent>
                 </Card>

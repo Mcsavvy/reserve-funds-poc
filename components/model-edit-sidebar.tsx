@@ -170,6 +170,20 @@ export function ModelEditSidebar({ open, onOpenChange, model, onSave }: ModelEdi
                 )}
               />
 
+              <FormField
+                control={form.control}
+                name="minimumCollectionFee"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Minimum Collection Fee ($)</FormLabel>
+                    <FormControl>
+                      <Input type="number" step="0.01" {...field} onChange={e => field.onChange(+e.target.value)} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
               {/* Inflation Rate */}
               <FormField
                 control={form.control}

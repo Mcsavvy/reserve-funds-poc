@@ -65,10 +65,19 @@ export const createDatabase = async (): Promise<ReserveFundsDatabase> => {
 
   console.log('Database created. Adding collections...');
 
-  // Add collections
+  // Add collections with migration strategies
   await db.addCollections({
     models: {
       schema: modelRxSchema,
+      migrationStrategies: {
+        // Migration from version 0 to 1: add minimumCollectionFee field
+        1: function(oldDoc: any) {
+          return {
+            ...oldDoc,
+            minimumCollectionFee: 0 // Default value for new field
+          };
+        }
+      }
     },
     expenses: {
       schema: expenseRxSchema,

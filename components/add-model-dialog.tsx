@@ -47,6 +47,7 @@ export function AddModelDialog({ open, onOpenChange, onModelCreated }: AddModelD
       startingAmount: 50000,
       fiscalYear: new Date().getFullYear(),
       monthlyReserveFeesPerHousingUnit: 200,
+      minimumCollectionFee: 0,
       inflationRate: 3.5,
       maximumAllowableFeeIncrease: 5.0,
       bankInterestRate: 2.5,
@@ -166,6 +167,20 @@ export function AddModelDialog({ open, onOpenChange, onModelCreated }: AddModelD
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Monthly Fees per Unit ($)</FormLabel>
+                    <FormControl>
+                      <Input type="number" step="0.01" {...field} onChange={e => field.onChange(+e.target.value)} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="minimumCollectionFee"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Minimum Collection Fee ($)</FormLabel>
                     <FormControl>
                       <Input type="number" step="0.01" {...field} onChange={e => field.onChange(+e.target.value)} />
                     </FormControl>

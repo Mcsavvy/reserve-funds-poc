@@ -52,6 +52,7 @@ export function EditModelDialog({ model, open, onOpenChange }: EditModelDialogPr
         startingAmount: model.startingAmount,
         fiscalYear: model.fiscalYear,
         monthlyReserveFeesPerHousingUnit: model.monthlyReserveFeesPerHousingUnit,
+        minimumCollectionFee: model.minimumCollectionFee || 0,
         inflationRate: model.inflationRate,
         maximumAllowableFeeIncrease: model.maximumAllowableFeeIncrease,
         bankInterestRate: model.bankInterestRate,
@@ -170,6 +171,20 @@ export function EditModelDialog({ model, open, onOpenChange }: EditModelDialogPr
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Monthly Fees per Unit ($)</FormLabel>
+                    <FormControl>
+                      <Input type="number" step="0.01" {...field} onChange={e => field.onChange(+e.target.value)} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="minimumCollectionFee"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Minimum Collection Fee ($)</FormLabel>
                     <FormControl>
                       <Input type="number" step="0.01" {...field} onChange={e => field.onChange(+e.target.value)} />
                     </FormControl>

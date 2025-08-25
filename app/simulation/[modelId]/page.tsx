@@ -7,12 +7,13 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, Edit, TrendingUp, TrendingDown, AlertTriangle, DollarSign } from 'lucide-react';
+import { ArrowLeft, Edit, TrendingUp, TrendingDown, AlertTriangle, DollarSign, Zap } from 'lucide-react';
 import { formatCurrency } from '@/lib/db-utils';
 import { ProjectionTable } from '@/components/projection-table';
 import { ModelEditSidebar } from '@/components/model-edit-sidebar';
 import { YearDetailSidebar } from '@/components/year-detail-sidebar';
-import { generateProjections, getProjectionStats, applyYearAdjustments, SimulationParams, YearProjection } from '@/lib/simulation';
+import { OptimizationResultsDialog } from '@/components/optimization-results-dialog';
+import { generateProjections, getProjectionStats, applyYearAdjustments, optimizeCollectionFees, SimulationParams, YearProjection, OptimizationResult } from '@/lib/simulation';
 import { Model } from '@/lib/db-schemas';
 
 export default function SimulationPage() {
@@ -28,6 +29,8 @@ export default function SimulationPage() {
   const [isModelEditOpen, setIsModelEditOpen] = useState(false);
   const [selectedYear, setSelectedYear] = useState<YearProjection | null>(null);
   const [yearAdjustments, setYearAdjustments] = useState<Record<number, any>>({});
+  const [optimizationResult, setOptimizationResult] = useState<OptimizationResult | null>(null);
+  const [isOptimizing, setIsOptimizing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   // Load model data
@@ -82,6 +85,45 @@ export default function SimulationPage() {
     }));
   };
 
+  const handleOptimizeFees = async () => {
+    if (!simulationParams || !expenses) return;
+    
+    setIsOptimizing(true);
+    try {
+      const result = optimizeCollectionFees(simulationParams, expenses);
+      setOptimizationResult(result);
+    } catch (error) {
+      console.error('Optimization failed:', error);
+    } finally {
+      setIsOptimizing(false);
+    }
+  };
+
+  const handleApplyOptimization = (optimizedParams: SimulationParams) => {
+    if (!optimizationResult) return;
+    
+    // If there are yearly adjustments, convert them to year adjustments format
+    if (optimizationResult.hasYearlyAdjustments) {
+      const newYearAdjustments: Record<number, any> = {};
+      
+      optimizationResult.yearlyAdjustments.forEach(adjustment => {
+        // Calculate the collections for this year based on the optimized fee
+        const annualCollections = adjustment.optimizedFee * 12 * (simulationParams?.housingUnits || 1);
+        newYearAdjustments[adjustment.year] = {
+          collections: annualCollections
+        };
+      });
+      
+      setYearAdjustments(newYearAdjustments);
+    } else {
+      // For flat fee optimization, update the simulation params
+      setSimulationParams(optimizedParams);
+      setYearAdjustments({}); // Clear year adjustments
+    }
+    
+    setOptimizationResult(null);
+  };
+
   const handleSaveModel = async () => {
     if (!model || !simulationParams) return;
     
@@ -99,6 +141,7 @@ export default function SimulationPage() {
     if (!model) return;
     const { id, createdAt, updatedAt, ...simParams } = model;
     setSimulationParams(simParams);
+    setYearAdjustments({}); // Clear any year-specific adjustments
   };
 
   const hasUnsavedChanges = useMemo(() => {
@@ -162,6 +205,16 @@ export default function SimulationPage() {
                   </Button>
                 </>
               )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleOptimizeFees}
+                disabled={isOptimizing}
+                className="flex items-center space-x-2 text-blue-600 border-blue-600 hover:bg-blue-50"
+              >
+                <Zap className="h-4 w-4" />
+                <span>{isOptimizing ? 'Optimizing...' : 'Optimize Fees'}</span>
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
@@ -325,6 +378,13 @@ export default function SimulationPage() {
           onYearAdjustment={handleYearAdjustment}
         />
       )}
+
+      <OptimizationResultsDialog
+        open={!!optimizationResult}
+        onOpenChange={(open) => !open && setOptimizationResult(null)}
+        result={optimizationResult}
+        onApply={handleApplyOptimization}
+      />
     </div>
   );
 }
