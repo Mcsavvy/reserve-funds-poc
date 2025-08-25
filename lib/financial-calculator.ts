@@ -23,7 +23,7 @@ function sumProductExpenses(
   expenses: Expense[],
   year: number,
   parameters: ModelParameters,
-  condition: 'equal' | 'greater' | 'range'
+  condition: 'equal' | 'greater'
 ): number {
   return expenses.reduce((sum, expense) => {
     let matches = false;
@@ -35,9 +35,6 @@ function sumProductExpenses(
       case 'greater':
         matches = expense.year > year;
         break;
-      case 'range':
-        matches = year >= expense.year && year <= (expense.year + parameters.loanTerm - 1);
-        break;
     }
     
     if (matches) {
@@ -48,11 +45,6 @@ function sumProductExpenses(
         const loanFactor = expense.type.toUpperCase() === 'LARGE' ? parameters.loanThresholdPercentage / 100 : 1;
         const yearsUntilExpense = Math.max(expense.year - year, 1);
         return sum + (inflatedAmount * loanFactor / yearsUntilExpense);
-      } else if (condition === 'range') {
-        // For loan repayment calculation
-        const loanFactor = expense.type.toUpperCase() === 'LARGE' ? parameters.loanThresholdPercentage / 100 : 1;
-        const loanAmount = (1 - loanFactor) * inflatedAmount;
-        return sum + calculatePMT(parameters.loanRate / 100, parameters.loanTerm, loanAmount);
       } else {
         // For future expenses in year
         return sum + inflatedAmount;
@@ -64,6 +56,55 @@ function sumProductExpenses(
 }
 
 /**
+ * Calculate loan repayments for a given year based on actual loans taken
+ */
+function calculateLoanRepayments(
+  loansTaken: { year: number; amount: number }[],
+  currentYear: number,
+  parameters: ModelParameters
+): number {
+  return loansTaken.reduce((sum, loan) => {
+    // Check if this loan should have repayments in the current year
+    const loanStartYear = loan.year;
+    const loanEndYear = loanStartYear + parameters.loanTerm - 1;
+    
+    if (currentYear >= loanStartYear && currentYear <= loanEndYear) {
+      return sum + calculatePMT(parameters.loanRate / 100, parameters.loanTerm, loan.amount);
+    }
+    
+    return sum;
+  }, 0);
+}
+
+/**
+ * Calculate loan amount needed for an expense
+ */
+function calculateLoanNeeded(
+  expense: Expense,
+  availableBalance: number,
+  parameters: ModelParameters
+): number {
+  const inflatedAmount = expense.amountUsdToday * Math.pow(1 + parameters.inflationRate / 100, expense.year - 1);
+  
+  // For large expenses, we can finance a percentage. For small expenses, we pay in full unless insufficient funds
+  if (expense.type.toUpperCase() === 'LARGE') {
+    const financedPortion = (1 - parameters.loanThresholdPercentage / 100) * inflatedAmount;
+    const cashPortion = (parameters.loanThresholdPercentage / 100) * inflatedAmount;
+    
+    // Check if we have enough cash for the cash portion
+    if (availableBalance >= cashPortion) {
+      return financedPortion;
+    } else {
+      // Need to finance more than the standard amount
+      return inflatedAmount - Math.max(0, availableBalance);
+    }
+  } else {
+    // Small expense - only take loan if insufficient funds
+    return Math.max(0, inflatedAmount - availableBalance);
+  }
+}
+
+/**
  * Calculate financial projections with a custom fee schedule
  */
 export function runWithFeeSchedule(
@@ -72,6 +113,7 @@ export function runWithFeeSchedule(
   feeSchedule: FeeSchedule
 ): ProjectionResults {
   const projections: ProjectionRow[] = [];
+  const loansTaken: { year: number; amount: number }[] = [];
   
   for (let year = 1; year <= parameters.horizon; year++) {
     const previousRow = projections[year - 2]; // Get previous year's data
@@ -88,12 +130,44 @@ export function runWithFeeSchedule(
     // Reserve Contribution (E column)
     const reserveContribution = sumProductExpenses(expenses, year, parameters, 'greater');
     
-    // Loan Repayments (F column)
-    const loanRepayments = sumProductExpenses(expenses, year, parameters, 'range');
+    // Calculate loan needed for expenses in this year
+    let loanTaken = 0;
+    const expensesThisYear = expenses.filter(e => e.year === year);
+    
+    if (expensesThisYear.length > 0) {
+      // Calculate available balance before expenses
+      const preliminaryLoanRepayments = calculateLoanRepayments(loansTaken, year, parameters);
+      const preliminaryUncappedCollections = baseMaintenanceInflated + reserveContribution + preliminaryLoanRepayments;
+      
+      // Calculate maximum allowed collections based on previous year's collections
+      let maxAllowedCollections = preliminaryUncappedCollections; // Default: no cap
+      if (year > 1 && previousRow) {
+        const previousCollections = previousRow.totalMaintenanceCollected;
+        maxAllowedCollections = previousCollections * (1 + parameters.maxFeeIncreasePercentage / 100);
+      }
+      
+      const preliminaryCollections = Math.min(preliminaryUncappedCollections, maxAllowedCollections);
+      const availableBalance = openingBalance + preliminaryCollections - baseMaintenanceInflated - preliminaryLoanRepayments;
+      
+      // Calculate total loan needed for all expenses this year
+      for (const expense of expensesThisYear) {
+        const loanNeeded = calculateLoanNeeded(expense, availableBalance, parameters);
+        if (loanNeeded > 0) {
+          loanTaken += loanNeeded;
+        }
+      }
+      
+      // Record the loan taken
+      if (loanTaken > 0) {
+        loansTaken.push({ year, amount: loanTaken });
+      }
+    }
+    
+    // Loan Repayments (F column) - based on actual loans taken
+    const loanRepayments = calculateLoanRepayments(loansTaken, year, parameters);
     
     // Collections without Safety Net (G column) - but capped by max fee increase
-    // Note: Loan repayments are paid from reserves, not from collections
-    const uncappedCollections = baseMaintenanceInflated + reserveContribution;
+    const uncappedCollections = baseMaintenanceInflated + reserveContribution + loanRepayments;
     
     // Calculate maximum allowed collections based on previous year's collections
     let maxAllowedCollections = uncappedCollections; // Default: no cap
@@ -102,14 +176,14 @@ export function runWithFeeSchedule(
       maxAllowedCollections = previousCollections * (1 + parameters.maxFeeIncreasePercentage / 100);
     }
     
-    // Apply the cap and ensure collections are never negative
-    const collectionsWithoutSafetyNet = Math.max(0, Math.min(uncappedCollections, maxAllowedCollections));
+    // Apply the cap
+    const collectionsWithoutSafetyNet = Math.min(uncappedCollections, maxAllowedCollections);
     
     // Calculate shortfall if collections were capped
     const collectionShortfall = uncappedCollections - collectionsWithoutSafetyNet;
     
-    // Provisional End Balance (H column) - affected by any collection shortfall
-    const provisionalEndBalance = openingBalance + collectionsWithoutSafetyNet - baseMaintenanceInflated - futureExpensesInYear - loanRepayments;
+    // Provisional End Balance (H column) - includes loan proceeds
+    const provisionalEndBalance = openingBalance + collectionsWithoutSafetyNet + loanTaken - baseMaintenanceInflated - futureExpensesInYear - loanRepayments;
     
     // Safety Net Target (I column)
     const safetyNetTarget = (parameters.safetyNetPercentage / 100) * (baseMaintenanceInflated + futureExpensesInYear + loanRepayments);
@@ -126,8 +200,8 @@ export function runWithFeeSchedule(
     // Total Maintenance Collected (K column) - final amount after all caps
     const totalMaintenanceCollected = collectionsWithoutSafetyNet + safetyNetTopUp;
     
-    // Closing Balance (L column)
-    const closingBalance = openingBalance + totalMaintenanceCollected - baseMaintenanceInflated - futureExpensesInYear - loanRepayments;
+    // Closing Balance (L column) - includes loan proceeds
+    const closingBalance = openingBalance + totalMaintenanceCollected + loanTaken - baseMaintenanceInflated - futureExpensesInYear - loanRepayments;
     
     projections.push({
       year,
@@ -137,6 +211,7 @@ export function runWithFeeSchedule(
       futureExpensesInYear,
       reserveContribution,
       loanRepayments,
+      loanTaken,
       collectionsWithoutSafetyNet,
       provisionalEndBalance,
       safetyNetTarget,
@@ -165,6 +240,7 @@ export function calculateProjections(
   expenses: Expense[]
 ): ProjectionResults {
   const projections: ProjectionRow[] = [];
+  const loansTaken: { year: number; amount: number }[] = [];
   
   for (let year = 1; year <= parameters.horizon; year++) {
     const previousRow = projections[year - 2]; // Get previous year's data
@@ -181,12 +257,45 @@ export function calculateProjections(
     // Reserve Contribution (E column)
     const reserveContribution = sumProductExpenses(expenses, year, parameters, 'greater');
     
-    // Loan Repayments (F column)
-    const loanRepayments = sumProductExpenses(expenses, year, parameters, 'range');
+    // Calculate loan needed for expenses in this year
+    let loanTaken = 0;
+    const expensesThisYear = expenses.filter(e => e.year === year);
+    
+    if (expensesThisYear.length > 0) {
+      // Calculate available balance before expenses (opening balance + collections without safety net - base maintenance)
+      // We need to do a preliminary calculation to see what balance would be available
+      const preliminaryLoanRepayments = calculateLoanRepayments(loansTaken, year, parameters);
+      const preliminaryUncappedCollections = baseMaintenanceInflated + reserveContribution + preliminaryLoanRepayments;
+      
+      // Calculate maximum allowed collections based on previous year's collections
+      let maxAllowedCollections = preliminaryUncappedCollections; // Default: no cap
+      if (year > 1 && previousRow) {
+        const previousCollections = previousRow.totalMaintenanceCollected;
+        maxAllowedCollections = previousCollections * (1 + parameters.maxFeeIncreasePercentage / 100);
+      }
+      
+      const preliminaryCollections = Math.min(preliminaryUncappedCollections, maxAllowedCollections);
+      const availableBalance = openingBalance + preliminaryCollections - baseMaintenanceInflated - preliminaryLoanRepayments;
+      
+      // Calculate total loan needed for all expenses this year
+      for (const expense of expensesThisYear) {
+        const loanNeeded = calculateLoanNeeded(expense, availableBalance, parameters);
+        if (loanNeeded > 0) {
+          loanTaken += loanNeeded;
+        }
+      }
+      
+      // Record the loan taken
+      if (loanTaken > 0) {
+        loansTaken.push({ year, amount: loanTaken });
+      }
+    }
+    
+    // Loan Repayments (F column) - based on actual loans taken
+    const loanRepayments = calculateLoanRepayments(loansTaken, year, parameters);
     
     // Collections without Safety Net (G column) - but capped by max fee increase
-    // Note: Loan repayments are paid from reserves, not from collections
-    const uncappedCollections = baseMaintenanceInflated + reserveContribution;
+    const uncappedCollections = baseMaintenanceInflated + reserveContribution + loanRepayments;
     
     // Calculate maximum allowed collections based on previous year's collections
     let maxAllowedCollections = uncappedCollections; // Default: no cap
@@ -195,14 +304,14 @@ export function calculateProjections(
       maxAllowedCollections = previousCollections * (1 + parameters.maxFeeIncreasePercentage / 100);
     }
     
-    // Apply the cap and ensure collections are never negative
-    const collectionsWithoutSafetyNet = Math.max(0, Math.min(uncappedCollections, maxAllowedCollections));
+    // Apply the cap
+    const collectionsWithoutSafetyNet = Math.min(uncappedCollections, maxAllowedCollections);
     
     // Calculate shortfall if collections were capped
     const collectionShortfall = uncappedCollections - collectionsWithoutSafetyNet;
     
-    // Provisional End Balance (H column) - affected by any collection shortfall
-    const provisionalEndBalance = openingBalance + collectionsWithoutSafetyNet - baseMaintenanceInflated - futureExpensesInYear - loanRepayments;
+    // Provisional End Balance (H column) - includes loan proceeds and accounts for expenses and loan repayments
+    const provisionalEndBalance = openingBalance + collectionsWithoutSafetyNet + loanTaken - baseMaintenanceInflated - futureExpensesInYear - loanRepayments;
     
     // Safety Net Target (I column)
     const safetyNetTarget = (parameters.safetyNetPercentage / 100) * (baseMaintenanceInflated + futureExpensesInYear + loanRepayments);
@@ -219,8 +328,8 @@ export function calculateProjections(
     // Total Maintenance Collected (K column) - final amount after all caps
     const totalMaintenanceCollected = collectionsWithoutSafetyNet + safetyNetTopUp;
     
-    // Closing Balance (L column)
-    const closingBalance = openingBalance + totalMaintenanceCollected - baseMaintenanceInflated - futureExpensesInYear - loanRepayments;
+    // Closing Balance (L column) - includes loan proceeds
+    const closingBalance = openingBalance + totalMaintenanceCollected + loanTaken - baseMaintenanceInflated - futureExpensesInYear - loanRepayments;
     
     projections.push({
       year,
@@ -230,6 +339,7 @@ export function calculateProjections(
       futureExpensesInYear,
       reserveContribution,
       loanRepayments,
+      loanTaken,
       collectionsWithoutSafetyNet,
       provisionalEndBalance,
       safetyNetTarget,

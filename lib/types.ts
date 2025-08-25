@@ -29,6 +29,7 @@ export interface ProjectionRow {
   futureExpensesInYear: number;
   reserveContribution: number;
   loanRepayments: number;
+  loanTaken: number; // Amount of loan taken in this year
   collectionsWithoutSafetyNet: number;
   provisionalEndBalance: number;
   safetyNetTarget: number;

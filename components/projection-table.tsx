@@ -50,6 +50,7 @@ export function ProjectionTable({ projections }: ProjectionTableProps) {
                   <TableHead className="min-w-[140px]">Expenses</TableHead>
                   <TableHead className="min-w-[130px]">Reserve Contribution</TableHead>
                   <TableHead className="min-w-[120px]">Loan Repayments</TableHead>
+                  <TableHead className="min-w-[120px]">Loan Taken</TableHead>
                   <TableHead className="min-w-[140px]">Collections w/o Safety Net</TableHead>
                   <TableHead className="min-w-[140px]">Provisional End Balance</TableHead>
                   <TableHead className="min-w-[120px]">Safety Net Target</TableHead>
@@ -94,6 +95,9 @@ export function ProjectionTable({ projections }: ProjectionTableProps) {
                       </TableCell>
                       <TableCell className={hasLoanRepayment ? 'text-orange-600' : ''}>
                         {hasLoanRepayment ? formatCurrency(row.loanRepayments) : '-'}
+                      </TableCell>
+                      <TableCell className={row.loanTaken > 0 ? 'text-purple-600 font-semibold' : ''}>
+                        {row.loanTaken > 0 ? formatCurrency(row.loanTaken) : '-'}
                       </TableCell>
                       <TableCell>{formatCurrency(row.collectionsWithoutSafetyNet)}</TableCell>
                       <TableCell className={row.provisionalEndBalance < 0 ? 'text-red-600' : ''}>
@@ -172,6 +176,10 @@ export function ProjectionTable({ projections }: ProjectionTableProps) {
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 bg-orange-600"></div>
               <span>Loan Payments</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 bg-purple-600"></div>
+              <span>Loan Taken</span>
             </div>
           </div>
         </div>
