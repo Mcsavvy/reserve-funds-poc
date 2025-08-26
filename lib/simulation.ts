@@ -223,8 +223,7 @@ export function optimizeCollectionFees(
   const housingUnits = params.housingUnits ?? 0;
   const minFee = params.minimumCollectionFee;
 
-  // Deep-copy projections so we can mutate safely
-  const optimizedProjections: YearProjection[] = JSON.parse(JSON.stringify(originalProjections));
+  let optimizedProjections: YearProjection[] = JSON.parse(JSON.stringify(originalProjections));
 
   if (optimizedProjections.length === 0 || housingUnits === 0) {
     // Nothing to optimise – return early with originals
@@ -245,98 +244,131 @@ export function optimizeCollectionFees(
       ],
     };
   }
-
-  // ------------- IDENTIFY EXPENSE YEARS -------------
+  
+  // ------------- IDENTIFY EXPENSE YEARS (MILESTONES) -------------
   const expenseIndices: number[] = [];
   optimizedProjections.forEach((p, idx) => {
     if (p.expenses > 0) {
       expenseIndices.push(idx);
     }
   });
-
-  // include a virtual milestone for the final year to handle trailing period
   const milestoneSet = new Set(expenseIndices);
   if (optimizedProjections.length > 0) {
     milestoneSet.add(optimizedProjections.length - 1);
   }
   const milestones = Array.from(milestoneSet).sort((a, b) => a - b);
 
-  let lastProcessedIdx = -1;
-  let openingBalance = params.startingAmount;
-  let prevYearCollectionFee = 0; // monthly fee per unit for previous year
+  // ------------- ITERATIVELY REFINE PROJECTIONS -------------
+  const requiredClosingBalances = new Map<number, number>();
 
-  const yearlyAdjustments: YearFeeAdjustment[] = [];
+  for (let iter = 0; iter < 10; iter++) { // Iterate to solve for inter-period dependencies
+    let projectionsThisIteration = JSON.parse(JSON.stringify(originalProjections));
+    let lastProcessedIdx = -1;
+    let openingBalance = params.startingAmount;
+    let prevYearCollectionFee = 0;
 
-  // ------------- PROCESS EACH PERIOD -------------
-  for (const milestoneIdx of milestones) {
-    if (milestoneIdx <= lastProcessedIdx) continue;
+    for (const milestoneIdx of milestones) {
+      if (milestoneIdx <= lastProcessedIdx) continue;
 
-    const periodYears = optimizedProjections.slice(lastProcessedIdx + 1, milestoneIdx + 1);
-    const yearsInPeriod = periodYears.length;
+      const periodYears = projectionsThisIteration.slice(lastProcessedIdx + 1, milestoneIdx + 1);
+      
+      // Use the required closing balance from the previous iteration to inform the current one
+      const requiredFundsAtMilestone = requiredClosingBalances.get(milestoneIdx) ?? targetMinBalance;
 
-    // Financial need at the milestone is to have at least targetMinBalance leftover
-    const requiredFundsAtMilestone = targetMinBalance;
+      let baseFee = solveForBaseFee(
+        openingBalance,
+        periodYears,
+        requiredFundsAtMilestone,
+        maxIncreaseFactor,
+        housingUnits,
+        minFee
+      );
 
-    // Solve for base collection fee of first year in period
-    let baseFee = solveForBaseFee(
-      openingBalance,
-      periodYears,
-      requiredFundsAtMilestone,
-      maxIncreaseFactor,
-      housingUnits,
-      minFee
-    );
-
-    // Constrain by maximum allowable jump from previous year (except first period)
-    if (lastProcessedIdx >= 0) {
-      const maxAllowedFee = prevYearCollectionFee * (1 + maxIncreaseFactor);
-      baseFee = Math.min(baseFee, maxAllowedFee);
-    }
-    baseFee = Math.max(baseFee, minFee);
-
-    // ------------- APPLY FEES FOR EACH YEAR IN PERIOD -------------
-    let feeThisYear = baseFee;
-    for (let i = 0; i < yearsInPeriod; i++) {
-      const globalYearIdx = lastProcessedIdx + 1 + i;
-      const yearProj = optimizedProjections[globalYearIdx];
-
-      yearProj.openingBalance = openingBalance;
-
-      // Collections = monthly fee * 12 * units (no inflation for simplicity)
-      yearProj.collections = feeThisYear * 12 * housingUnits;
-
-      // Recalculate closing balance
-      yearProj.closingBalance =
-        yearProj.openingBalance +
-        yearProj.collections -
-        yearProj.expenses -
-        yearProj.safetyNet;
-
-      // Record adjustment data
-      const originalCollections = originalProjections[globalYearIdx].collections;
-      const originalMonthlyFee = originalCollections / (12 * housingUnits);
-      if (Math.abs(originalMonthlyFee - feeThisYear) > 1e-6) {
-        yearlyAdjustments.push({
-          year: yearProj.year,
-          originalFee: originalMonthlyFee,
-          optimizedFee: feeThisYear,
-          feeIncrease: feeThisYear - originalMonthlyFee,
-          feeIncreasePercentage: originalMonthlyFee === 0 ? 100 : ((feeThisYear - originalMonthlyFee) / originalMonthlyFee) * 100,
-          reason: 'Optimised to satisfy upcoming expense period',
-        });
+      if (lastProcessedIdx >= 0) {
+        const maxAllowedFee = prevYearCollectionFee * (1 + maxIncreaseFactor);
+        baseFee = Math.min(baseFee, maxAllowedFee);
       }
+      baseFee = Math.max(baseFee, minFee);
 
-      // Prepare for next iteration
-      openingBalance = yearProj.closingBalance;
-      prevYearCollectionFee = feeThisYear;
-      feeThisYear = feeThisYear * (1 + maxIncreaseFactor); // ramp-up for next year
+      // Apply fees and update projections for the current period
+      let feeThisYear = baseFee;
+      for (let i = 0; i < periodYears.length; i++) {
+        const globalYearIdx = lastProcessedIdx + 1 + i;
+        const yearProj = projectionsThisIteration[globalYearIdx];
+        
+        yearProj.openingBalance = openingBalance;
+        yearProj.collections = feeThisYear * 12 * housingUnits;
+        yearProj.closingBalance =
+          yearProj.openingBalance +
+          yearProj.collections -
+          yearProj.expenses -
+          yearProj.safetyNet;
+
+        openingBalance = yearProj.closingBalance;
+        prevYearCollectionFee = feeThisYear;
+        feeThisYear *= (1 + maxIncreaseFactor);
+      }
+      lastProcessedIdx = milestoneIdx;
     }
 
-    lastProcessedIdx = milestoneIdx;
+    const stats = getProjectionStats(projectionsThisIteration);
+    if (stats.minBalance >= targetMinBalance) {
+      optimizedProjections = projectionsThisIteration;
+      break; // Success: no deficits found
+    }
+
+    // Deficit found: update the requirements for the next iteration
+    const firstDeficitIdx = projectionsThisIteration.findIndex((p: YearProjection) => p.closingBalance < targetMinBalance);
+    const deficitAmount = targetMinBalance - projectionsThisIteration[firstDeficitIdx].closingBalance;
+
+    let culpritMilestoneIdx = -1;
+    for (const m of milestones) {
+      if (m < firstDeficitIdx) {
+        culpritMilestoneIdx = m;
+      } else {
+        break;
+      }
+    }
+
+    if (culpritMilestoneIdx !== -1) {
+      const currentRequirement = requiredClosingBalances.get(culpritMilestoneIdx) ?? targetMinBalance;
+      requiredClosingBalances.set(culpritMilestoneIdx, currentRequirement + deficitAmount);
+    } else {
+      // Deficit is in the first period, cannot be fixed by increasing prior period's closing balance.
+      optimizedProjections = projectionsThisIteration; // Keep the result with the deficit
+      break;
+    }
+    
+    if (iter === 9) { // If we max out iterations, keep the last result
+      optimizedProjections = projectionsThisIteration;
+    }
   }
 
   // ------------- FINALISE -------------
   const optimizedStats = getProjectionStats(optimizedProjections);
+  const yearlyAdjustments: YearFeeAdjustment[] = [];
+
+  for (let i = 0; i < optimizedProjections.length; i++) {
+    const optimizedCollections = optimizedProjections[i].collections;
+    const originalCollections = originalProjections[i].collections;
+    const optimizedMonthlyFee = housingUnits > 0 ? optimizedCollections / (12 * housingUnits) : 0;
+    const originalMonthlyFee = housingUnits > 0 ? originalCollections / (12 * housingUnits) : 0;
+
+    if (Math.abs(originalMonthlyFee - optimizedMonthlyFee) > 1e-6) {
+      yearlyAdjustments.push({
+        year: optimizedProjections[i].year,
+        originalFee: originalMonthlyFee,
+        optimizedFee: optimizedMonthlyFee,
+        feeIncrease: optimizedMonthlyFee - originalMonthlyFee,
+        feeIncreasePercentage: originalMonthlyFee === 0 ? 100 : ((optimizedMonthlyFee - originalMonthlyFee) / originalMonthlyFee) * 100,
+        reason: 'Optimised to satisfy upcoming expense period',
+      });
+    }
+  }
+
+  const optimizedFirstYearFee = optimizedProjections.length > 0 && housingUnits > 0
+    ? optimizedProjections[0].collections / (12 * housingUnits)
+    : params.monthlyReserveFeesPerHousingUnit;
 
   const result: OptimizationResult = {
     optimizedParams: params,
@@ -344,17 +376,17 @@ export function optimizeCollectionFees(
     stats: optimizedStats,
     changes: {
       originalMonthlyFee: params.monthlyReserveFeesPerHousingUnit,
-      optimizedMonthlyFee: optimizedProjections[0].collections / (12 * housingUnits),
-      feeIncrease: (optimizedProjections[0].collections / (12 * housingUnits)) - params.monthlyReserveFeesPerHousingUnit,
+      optimizedMonthlyFee: optimizedFirstYearFee,
+      feeIncrease: optimizedFirstYearFee - params.monthlyReserveFeesPerHousingUnit,
       feeIncreasePercentage:
         params.monthlyReserveFeesPerHousingUnit === 0
-          ? 100
-          : (((optimizedProjections[0].collections / (12 * housingUnits)) - params.monthlyReserveFeesPerHousingUnit) /
+          ? (optimizedFirstYearFee > 0 ? 100 : 0)
+          : ((optimizedFirstYearFee - params.monthlyReserveFeesPerHousingUnit) /
               params.monthlyReserveFeesPerHousingUnit) * 100,
     },
     yearlyAdjustments,
     hasYearlyAdjustments: yearlyAdjustments.length > 0,
-    recommendations: yearlyAdjustments.length > 0 ? ['Fee schedule adjusted to meet projected expenses.'] : ['Original fee schedule deemed sufficient.'],
+    recommendations: yearlyAdjustments.length > 0 ? ['Fee schedule adjusted to meet projected expenses and maintain a positive balance.'] : ['Original fee schedule deemed sufficient.'],
   };
 
   return result;
@@ -405,7 +437,7 @@ function solveForBaseFee(
 
   for (let iter = 0; iter < 40; iter++) {
     const mid = (low + high) / 2;
-    const finalBalance = simulatePeriodBalance(
+    const minBalanceInPeriod = simulatePeriodMinBalance(
       openingBalance,
       mid,
       periodYears,
@@ -413,7 +445,7 @@ function solveForBaseFee(
       housingUnits
     );
 
-    if (finalBalance >= requiredFundsAtMilestone) {
+    if (minBalanceInPeriod >= requiredFundsAtMilestone) {
       // we collected too much – try lower fee
       high = mid;
     } else {
@@ -424,22 +456,27 @@ function solveForBaseFee(
   return high; // smallest fee that meets requirement
 }
 
-function simulatePeriodBalance(
+function simulatePeriodMinBalance(
   openingBalance: number,
   baseFee: number,
   periodYears: YearProjection[],
   maxIncreaseFactor: number,
   housingUnits: number
 ): number {
+  if (periodYears.length === 0) {
+    return openingBalance;
+  }
   let balance = openingBalance;
   let fee = baseFee;
+  let minBalance = Infinity;
 
   for (let i = 0; i < periodYears.length; i++) {
     const yr = periodYears[i];
     const collections = fee * 12 * housingUnits;
     balance = balance + collections - yr.expenses - yr.safetyNet;
+    minBalance = Math.min(minBalance, balance);
     fee = fee * (1 + maxIncreaseFactor);
   }
 
-  return balance;
+  return minBalance;
 }

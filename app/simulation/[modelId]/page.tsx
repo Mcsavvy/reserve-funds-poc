@@ -426,6 +426,81 @@ export default function SimulationPage() {
                         </LineChart>
                       </ResponsiveContainer>
                     </div>
+
+                    {/* Collection Fee Change Graph */}
+                    <div className="h-80 p-6 bg-gray-50 rounded-lg border">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-4">Collection Fee Year-over-Year Change</h3>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart
+                          data={projections.map((p, index) => {
+                            if (index === 0) {
+                              return {
+                                year: p.year,
+                                feeChange: 0,
+                                monthlyFee: p.collections / (12 * (simulationParams?.housingUnits || 1))
+                              };
+                            }
+                            const prevCollections = projections[index - 1].collections;
+                            const currentCollections = p.collections;
+                            const prevMonthlyFee = prevCollections / (12 * (simulationParams?.housingUnits || 1));
+                            const currentMonthlyFee = currentCollections / (12 * (simulationParams?.housingUnits || 1));
+                            const feeChange = prevMonthlyFee > 0 ? ((currentMonthlyFee - prevMonthlyFee) / prevMonthlyFee) * 100 : 0;
+                            
+                            return {
+                              year: p.year,
+                              feeChange: feeChange,
+                              monthlyFee: currentMonthlyFee
+                            };
+                          })}
+                          margin={{
+                            top: 20,
+                            right: 40,
+                            left: 40,
+                            bottom: 20,
+                          }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                          <XAxis 
+                            dataKey="year" 
+                            tick={{ fontSize: 12, fill: '#6b7280' }}
+                            axisLine={{ stroke: '#d1d5db' }}
+                          />
+                          <YAxis 
+                            tickFormatter={(value) => `${value.toFixed(1)}%`}
+                            tick={{ fontSize: 12, fill: '#6b7280' }}
+                            axisLine={{ stroke: '#d1d5db' }}
+                          />
+                          <Tooltip 
+                            content={({ active, payload, label }: { active?: boolean; payload?: any[]; label?: string }) => {
+                              if (active && payload && payload.length) {
+                                const data = payload[0]?.payload;
+                                return (
+                                  <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-xl">
+                                    <p className="font-semibold text-gray-900 mb-2">Year {label}</p>
+                                    <p className="text-sm mb-1 text-purple-600">
+                                      Fee Change: {data?.feeChange.toFixed(2)}%
+                                    </p>
+                                    <p className="text-sm mb-1 text-gray-600">
+                                      Monthly Fee: {formatCurrency(data?.monthlyFee || 0)}
+                                    </p>
+                                  </div>
+                                );
+                              }
+                              return null;
+                            }}
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="feeChange"
+                            name="Fee Change %"
+                            stroke="#8b5cf6"
+                            strokeWidth={3}
+                            dot={{ fill: '#8b5cf6', strokeWidth: 2, r: 5 }}
+                            activeDot={{ r: 8, stroke: '#8b5cf6', strokeWidth: 2 }}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
                     
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                       <div className="text-center p-6 bg-blue-50 rounded-lg border border-blue-200">
