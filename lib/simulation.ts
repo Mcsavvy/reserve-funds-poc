@@ -256,10 +256,11 @@ export function optimizeCollectionFees(
   });
 
   // include a virtual milestone for the final year to handle trailing period
-  const milestones = expenseIndices.length > 0 ? [...expenseIndices] : [];
+  const milestoneSet = new Set(expenseIndices);
   if (optimizedProjections.length > 0) {
-    milestones.push(optimizedProjections.length - 1);
+    milestoneSet.add(optimizedProjections.length - 1);
   }
+  const milestones = Array.from(milestoneSet).sort((a, b) => a - b);
 
   let lastProcessedIdx = -1;
   let openingBalance = params.startingAmount;
@@ -274,10 +275,8 @@ export function optimizeCollectionFees(
     const periodYears = optimizedProjections.slice(lastProcessedIdx + 1, milestoneIdx + 1);
     const yearsInPeriod = periodYears.length;
 
-    // Financial need at the milestone (expense + safety net)
-    const targetExpense = optimizedProjections[milestoneIdx].expenses;
-    const targetSafety = optimizedProjections[milestoneIdx].safetyNet;
-    const requiredFundsAtMilestone = targetExpense + targetSafety;
+    // Financial need at the milestone is to have at least targetMinBalance leftover
+    const requiredFundsAtMilestone = targetMinBalance;
 
     // Solve for base collection fee of first year in period
     let baseFee = solveForBaseFee(
