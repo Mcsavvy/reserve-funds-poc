@@ -15,6 +15,7 @@ import { YearDetailSidebar } from '@/components/year-detail-sidebar';
 import { OptimizationResultsDialog } from '@/components/optimization-results-dialog';
 import { generateProjections, getProjectionStats, applyYearAdjustments, optimizeCollectionFees, SimulationParams, YearProjection, OptimizationResult } from '@/lib/simulation';
 import { Model } from '@/lib/db-schemas';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 
 export default function SimulationPage() {
   const params = useParams();
@@ -343,7 +344,111 @@ export default function SimulationPage() {
                 <CardTitle>Financial Analysis</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-muted-foreground">Analysis features coming soon...</p>
+                {projections.length > 0 && (
+                  <div className="space-y-8">
+                    <div className="h-96 p-6 bg-gray-50 rounded-lg border">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart
+                          data={projections.map(p => ({
+                            year: p.year,
+                            collections: p.collections,
+                            expenses: p.expenses,
+                            closingBalance: p.closingBalance,
+                          }))}
+                          margin={{
+                            top: 30,
+                            right: 40,
+                            left: 40,
+                            bottom: 30,
+                          }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                          <XAxis 
+                            dataKey="year" 
+                            label={{ value: 'Year', position: 'insideBottom', offset: -15 }}
+                            tick={{ fontSize: 12, fill: '#6b7280' }}
+                            axisLine={{ stroke: '#d1d5db' }}
+                          />
+                          <YAxis 
+                            tickFormatter={(value) => formatCurrency(value)}
+                            tick={{ fontSize: 12, fill: '#6b7280' }}
+                            axisLine={{ stroke: '#d1d5db' }}
+                          />
+                          <Tooltip 
+                            content={({ active, payload, label }: { active?: boolean; payload?: any[]; label?: string }) => {
+                              if (active && payload && payload.length) {
+                                return (
+                                  <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-xl">
+                                    <p className="font-semibold text-gray-900 mb-2">Year {label}</p>
+                                    {payload.map((entry: any, index: number) => (
+                                      <p key={index} className="text-sm mb-1" style={{ color: entry.color }}>
+                                        {entry.name}: {formatCurrency(entry.value as number)}
+                                      </p>
+                                    ))}
+                                  </div>
+                                );
+                              }
+                              return null;
+                            }}
+                          />
+                          <Legend 
+                            verticalAlign="top" 
+                            height={36}
+                            wrapperStyle={{ paddingBottom: '20px' }}
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="collections"
+                            name="Collections"
+                            stroke="#3b82f6"
+                            strokeWidth={3}
+                            dot={{ fill: '#3b82f6', strokeWidth: 2, r: 5 }}
+                            activeDot={{ r: 8, stroke: '#3b82f6', strokeWidth: 2 }}
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="expenses"
+                            name="Expenses"
+                            stroke="#ef4444"
+                            strokeWidth={3}
+                            dot={{ fill: '#ef4444', strokeWidth: 2, r: 5 }}
+                            activeDot={{ r: 8, stroke: '#ef4444', strokeWidth: 2 }}
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="closingBalance"
+                            name="Closing Balance"
+                            stroke="#10b981"
+                            strokeWidth={3}
+                            dot={{ fill: '#10b981', strokeWidth: 2, r: 5 }}
+                            activeDot={{ r: 8, stroke: '#10b981', strokeWidth: 2 }}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div className="text-center p-6 bg-blue-50 rounded-lg border border-blue-200">
+                        <div className="text-3xl font-bold text-blue-600 mb-2">
+                          {formatCurrency(Math.max(...projections.map(p => p.collections)))}
+                        </div>
+                        <div className="text-sm text-blue-700 font-medium">Peak Collections</div>
+                      </div>
+                      <div className="text-center p-6 bg-red-50 rounded-lg border border-red-200">
+                        <div className="text-3xl font-bold text-red-600 mb-2">
+                          {formatCurrency(Math.max(...projections.map(p => p.expenses)))}
+                        </div>
+                        <div className="text-sm text-red-700 font-medium">Peak Expenses</div>
+                      </div>
+                      <div className="text-center p-6 bg-green-50 rounded-lg border border-green-200">
+                        <div className="text-3xl font-bold text-green-600 mb-2">
+                          {formatCurrency(Math.max(...projections.map(p => p.closingBalance)))}
+                        </div>
+                        <div className="text-sm text-green-700 font-medium">Peak Balance</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
