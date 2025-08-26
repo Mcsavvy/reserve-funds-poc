@@ -7,13 +7,27 @@ export interface YearProjection {
   expenses: number;
   collections: number;
   safetyNet: number;
+  loansTaken: number;
+  loanPayments: number;
   closingBalance: number;
   expenseDetails: ExpenseOccurrence[];
+  loanDetails: LoanDetail[];
 }
 
 export interface ExpenseOccurrence {
   expense: Expense;
   inflatedCost: number;
+  loanAmount: number;
+  outOfPocketAmount: number;
+}
+
+export interface LoanDetail {
+  year: number;
+  originalAmount: number;
+  remainingBalance: number;
+  payment: number;
+  interest: number;
+  principal: number;
 }
 
 export interface SimulationParams extends Omit<Model, 'id' | 'createdAt' | 'updatedAt'> {
@@ -29,6 +43,67 @@ export function calculateInflatedCost(
   yearsFromBase: number
 ): number {
   return baseCost * Math.pow(1 + inflationRate / 100, yearsFromBase);
+}
+
+/**
+ * Determine if an expense qualifies as a large expense based on inflated baseline
+ */
+export function isLargeExpense(
+  inflatedCost: number,
+  largeExpenseBaseline: number,
+  inflationRate: number,
+  yearsFromBase: number
+): boolean {
+  const inflatedBaseline = calculateInflatedCost(largeExpenseBaseline, inflationRate, yearsFromBase);
+  return inflatedCost >= inflatedBaseline;
+}
+
+/**
+ * Calculate loan amount for a large expense
+ */
+export function calculateLoanAmount(
+  inflatedCost: number,
+  loanThresholdPercentage: number,
+  largeExpenseBaseline: number,
+  inflationRate: number,
+  yearsFromBase: number
+): number {
+  if (!isLargeExpense(inflatedCost, largeExpenseBaseline, inflationRate, yearsFromBase)) {
+    return 0;
+  }
+  return inflatedCost * (loanThresholdPercentage / 100);
+}
+
+/**
+ * Calculate annual loan payment using standard amortization formula
+ */
+export function calculateAnnualLoanPayment(
+  principal: number,
+  annualInterestRate: number,
+  tenureYears: number
+): number {
+  if (principal <= 0 || tenureYears <= 0) return 0;
+  if (annualInterestRate === 0) return principal / tenureYears;
+  
+  const rate = annualInterestRate / 100;
+  const payment = principal * (rate * Math.pow(1 + rate, tenureYears)) / (Math.pow(1 + rate, tenureYears) - 1);
+  return payment;
+}
+
+/**
+ * Calculate loan payment breakdown (interest vs principal)
+ */
+export function calculateLoanPaymentBreakdown(
+  remainingBalance: number,
+  annualPayment: number,
+  annualInterestRate: number
+): { interest: number; principal: number } {
+  if (remainingBalance <= 0) return { interest: 0, principal: 0 };
+  
+  const interest = remainingBalance * (annualInterestRate / 100);
+  const principal = Math.min(annualPayment - interest, remainingBalance);
+  
+  return { interest, principal };
 }
 
 /**
@@ -60,18 +135,30 @@ export function calculateYearExpenses(
   expenses: Expense[],
   year: number,
   modelFiscalYear: number,
-  inflationRate: number
+  params: SimulationParams
 ): ExpenseOccurrence[] {
   const yearExpenses: ExpenseOccurrence[] = [];
   
   for (const expense of expenses) {
     if (doesExpenseOccurInYear(expense, year, modelFiscalYear)) {
       const yearsFromBase = year - modelFiscalYear;
-      const inflatedCost = calculateInflatedCost(expense.cost, inflationRate, yearsFromBase);
+      const inflatedCost = calculateInflatedCost(expense.cost, params.inflationRate, yearsFromBase);
+      
+      const loanAmount = calculateLoanAmount(
+        inflatedCost,
+        params.loanThresholdPercentage || 0,
+        params.largeExpenseBaseline || 0,
+        params.inflationRate,
+        yearsFromBase
+      );
+      
+      const outOfPocketAmount = inflatedCost - loanAmount;
       
       yearExpenses.push({
         expense,
         inflatedCost,
+        loanAmount,
+        outOfPocketAmount,
       });
     }
   }
@@ -89,9 +176,75 @@ export function generateProjections(
   const projections: YearProjection[] = [];
   let currentBalance = params.startingAmount;
   
+  // Track active loans across years
+  const activeLoans: Map<string, { 
+    originalAmount: number; 
+    remainingBalance: number; 
+    annualPayment: number;
+    startYear: number;
+  }> = new Map();
+  
   for (let year = params.fiscalYear; year < params.fiscalYear + params.period; year++) {
-    const expenseDetails = calculateYearExpenses(expenses, year, params.fiscalYear, params.inflationRate);
-    const totalExpenses = expenseDetails.reduce((sum, detail) => sum + detail.inflatedCost, 0);
+    const expenseDetails = calculateYearExpenses(expenses, year, params.fiscalYear, params);
+    
+    // Calculate total out-of-pocket expenses (excluding loan portions)
+    const totalOutOfPocketExpenses = expenseDetails.reduce((sum, detail) => sum + detail.outOfPocketAmount, 0);
+    
+    // Calculate total loans taken this year
+    const totalLoansTaken = expenseDetails.reduce((sum, detail) => sum + detail.loanAmount, 0);
+    
+    // Add new loans to active loans tracking
+    if (totalLoansTaken > 0) {
+      const loanId = `${year}-loan`;
+      const annualPayment = calculateAnnualLoanPayment(
+        totalLoansTaken,
+        params.loanInterestRate || 0,
+        params.loanTenureYears || 10
+      );
+      
+      activeLoans.set(loanId, {
+        originalAmount: totalLoansTaken,
+        remainingBalance: totalLoansTaken,
+        annualPayment,
+        startYear: year,
+      });
+    }
+    
+    // Calculate loan payments for existing loans
+    let totalLoanPayments = 0;
+    const currentYearLoanDetails: LoanDetail[] = [];
+    
+    for (const [loanId, loan] of activeLoans.entries()) {
+      // Don't start payments until the year after the loan is taken
+      if (year <= loan.startYear) continue;
+      
+      const paymentBreakdown = calculateLoanPaymentBreakdown(
+        loan.remainingBalance,
+        loan.annualPayment,
+        params.loanInterestRate || 0
+      );
+      
+      if (loan.remainingBalance > 0) {
+        totalLoanPayments += paymentBreakdown.interest + paymentBreakdown.principal;
+        
+        currentYearLoanDetails.push({
+          year: loan.startYear,
+          originalAmount: loan.originalAmount,
+          remainingBalance: loan.remainingBalance,
+          payment: paymentBreakdown.interest + paymentBreakdown.principal,
+          interest: paymentBreakdown.interest,
+          principal: paymentBreakdown.principal,
+        });
+        
+        // Update remaining balance
+        loan.remainingBalance -= paymentBreakdown.principal;
+        
+        // Remove loan if fully paid
+        if (loan.remainingBalance <= 0.01) {
+          activeLoans.delete(loanId);
+        }
+      }
+    }
     
     // Calculate collections (monthly fees * 12 months * housing units)
     const yearsFromBase = year - params.fiscalYear;
@@ -102,20 +255,24 @@ export function generateProjections(
     );
     const collections = inflatedMonthlyFee * 12 * (params.housingUnits || 0);
     
-    // Calculate safety net (percentage of expenses)
-    const safetyNet = totalExpenses * (params.safetyNetPercentage / 100);
+    // Calculate safety net (percentage of out-of-pocket expenses only)
+    const safetyNet = totalOutOfPocketExpenses * (params.safetyNetPercentage / 100);
     
     // Calculate closing balance
-    const closingBalance = currentBalance + collections - totalExpenses - safetyNet;
+    // Balance = Opening + Collections + Loans Taken - Out-of-pocket Expenses - Safety Net - Loan Payments
+    const closingBalance = currentBalance + collections + totalLoansTaken - totalOutOfPocketExpenses - safetyNet - totalLoanPayments;
     
     projections.push({
       year,
       openingBalance: currentBalance,
-      expenses: totalExpenses,
+      expenses: totalOutOfPocketExpenses, // Only out-of-pocket portion
       collections,
       safetyNet,
+      loansTaken: totalLoansTaken,
+      loanPayments: totalLoanPayments,
       closingBalance,
       expenseDetails,
+      loanDetails: currentYearLoanDetails,
     });
     
     // Update current balance for next year
@@ -130,7 +287,14 @@ export function generateProjections(
  */
 export function applyYearAdjustments(
   projections: YearProjection[],
-  adjustments: Record<number, { openingBalance?: number; collections?: number; expenses?: number; safetyNet?: number }>
+  adjustments: Record<number, { 
+    openingBalance?: number; 
+    collections?: number; 
+    expenses?: number; 
+    safetyNet?: number;
+    loansTaken?: number;
+    loanPayments?: number;
+  }>
 ): YearProjection[] {
   const adjustedProjections = [...projections];
   
@@ -151,14 +315,18 @@ export function applyYearAdjustments(
       collections: adjustment.collections ?? projection.collections,
       expenses: adjustment.expenses ?? projection.expenses,
       safetyNet: adjustment.safetyNet ?? projection.safetyNet,
+      loansTaken: adjustment.loansTaken ?? projection.loansTaken,
+      loanPayments: adjustment.loanPayments ?? projection.loanPayments,
     };
     
-    // Recalculate closing balance
+    // Recalculate closing balance with loan components
     adjustedProjection.closingBalance = 
       adjustedProjection.openingBalance + 
-      adjustedProjection.collections - 
+      adjustedProjection.collections + 
+      adjustedProjection.loansTaken - 
       adjustedProjection.expenses - 
-      adjustedProjection.safetyNet;
+      adjustedProjection.safetyNet - 
+      adjustedProjection.loanPayments;
     
     adjustedProjections[yearIndex] = adjustedProjection;
     
@@ -168,7 +336,12 @@ export function applyYearAdjustments(
       adjustedProjections[i] = {
         ...adjustedProjections[i],
         openingBalance: prevClosingBalance,
-        closingBalance: prevClosingBalance + adjustedProjections[i].collections - adjustedProjections[i].expenses - adjustedProjections[i].safetyNet
+        closingBalance: prevClosingBalance + 
+          adjustedProjections[i].collections + 
+          adjustedProjections[i].loansTaken - 
+          adjustedProjections[i].expenses - 
+          adjustedProjections[i].safetyNet - 
+          adjustedProjections[i].loanPayments
       };
     }
   }
@@ -401,6 +574,8 @@ export function getProjectionStats(projections: YearProjection[]) {
   const finalBalance = projections[projections.length - 1]?.closingBalance || 0;
   const totalCollections = projections.reduce((sum, p) => sum + p.collections, 0);
   const totalExpenses = projections.reduce((sum, p) => sum + p.expenses, 0);
+  const totalLoansTaken = projections.reduce((sum, p) => sum + (p.loansTaken || 0), 0);
+  const totalLoanPayments = projections.reduce((sum, p) => sum + (p.loanPayments || 0), 0);
   const negativeBalanceYears = projections.filter(p => p.closingBalance < 0).length;
   
   return {
@@ -409,6 +584,8 @@ export function getProjectionStats(projections: YearProjection[]) {
     finalBalance,
     totalCollections,
     totalExpenses,
+    totalLoansTaken,
+    totalLoanPayments,
     negativeBalanceYears,
     averageBalance: projections.reduce((sum, p) => sum + p.closingBalance, 0) / projections.length,
   };

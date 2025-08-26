@@ -24,7 +24,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { CalendarDays, DollarSign, TrendingUp, TrendingDown, AlertTriangle, Edit } from 'lucide-react';
+import { CalendarDays, DollarSign, TrendingUp, TrendingDown, AlertTriangle, Edit, CreditCard, PiggyBank } from 'lucide-react';
 import { formatCurrency } from '@/lib/db-utils';
 import { YearProjection, SimulationParams } from '@/lib/simulation';
 
@@ -34,6 +34,8 @@ const YearAdjustmentSchema = z.object({
   collections: z.number().min(0, 'Collections cannot be negative'),
   expenses: z.number().min(0, 'Expenses cannot be negative'),
   safetyNet: z.number().min(0, 'Safety net cannot be negative'),
+  loansTaken: z.number().min(0, 'Loans taken cannot be negative'),
+  loanPayments: z.number().min(0, 'Loan payments cannot be negative'),
   monthlyFee: z.number().min(0, 'Monthly fee cannot be negative'),
 });
 
@@ -65,6 +67,8 @@ export function YearDetailSidebar({
       collections: yearProjection.collections,
       expenses: yearProjection.expenses,
       safetyNet: yearProjection.safetyNet,
+      loansTaken: yearProjection.loansTaken || 0,
+      loanPayments: yearProjection.loanPayments || 0,
       monthlyFee: currentMonthlyFee,
     },
   });
@@ -77,6 +81,8 @@ export function YearDetailSidebar({
       collections: yearProjection.collections,
       expenses: yearProjection.expenses,
       safetyNet: yearProjection.safetyNet,
+      loansTaken: yearProjection.loansTaken || 0,
+      loanPayments: yearProjection.loanPayments || 0,
       monthlyFee: currentMonthlyFeeForReset,
     };
     form.reset(defaultValues);
@@ -87,13 +93,13 @@ export function YearDetailSidebar({
   
   // Calculate adjusted projection without causing re-renders
   const adjustedProjection = useMemo(() => {
-    const { openingBalance, collections, expenses, safetyNet, monthlyFee } = watchedValues;
+    const { openingBalance, collections, expenses, safetyNet, loansTaken, loanPayments, monthlyFee } = watchedValues;
     
     // Calculate collections from monthly fee if it was changed
     const calculatedCollections = monthlyFee * 12 * (model.housingUnits || 1);
     const actualCollections = Math.abs(calculatedCollections - collections) < 0.01 ? collections : calculatedCollections;
     
-    const closingBalance = openingBalance + actualCollections - expenses - safetyNet;
+    const closingBalance = openingBalance + actualCollections + loansTaken - expenses - safetyNet - loanPayments;
     
     return {
       ...yearProjection,
@@ -101,6 +107,8 @@ export function YearDetailSidebar({
       collections: actualCollections,
       expenses,
       safetyNet,
+      loansTaken,
+      loanPayments,
       closingBalance,
     };
   }, [watchedValues, yearProjection, model.housingUnits]);
@@ -115,6 +123,9 @@ export function YearDetailSidebar({
       collections: yearProjection.collections,
       expenses: yearProjection.expenses,
       safetyNet: yearProjection.safetyNet,
+      loansTaken: yearProjection.loansTaken || 0,
+      loanPayments: yearProjection.loanPayments || 0,
+      monthlyFee: currentMonthlyFee,
     };
     form.reset(originalValues);
   };
@@ -128,6 +139,8 @@ export function YearDetailSidebar({
     collections: yearProjection.collections,
     expenses: yearProjection.expenses,
     safetyNet: yearProjection.safetyNet,
+    loansTaken: yearProjection.loansTaken || 0,
+    loanPayments: yearProjection.loanPayments || 0,
     monthlyFee: currentMonthlyFee,
   });
   
@@ -217,6 +230,18 @@ export function YearDetailSidebar({
                     -{formatCurrency(adjustedProjection.safetyNet)}
                   </span>
                 </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-muted-foreground">Loans Taken</span>
+                  <span className="font-medium text-blue-600">
+                    +{formatCurrency(adjustedProjection.loansTaken || 0)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-muted-foreground">Loan Payments</span>
+                  <span className="font-medium text-purple-600">
+                    -{formatCurrency(adjustedProjection.loanPayments || 0)}
+                  </span>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -288,6 +313,18 @@ export function YearDetailSidebar({
                           <p className="text-muted-foreground">Inflated Cost</p>
                           <p className="font-medium text-red-600">{formatCurrency(detail.inflatedCost)}</p>
                         </div>
+                        {detail.loanAmount > 0 && (
+                          <>
+                            <div>
+                              <p className="text-muted-foreground">Loan Amount</p>
+                              <p className="font-medium text-blue-600">{formatCurrency(detail.loanAmount)}</p>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground">Out-of-Pocket</p>
+                              <p className="font-medium text-orange-600">{formatCurrency(detail.outOfPocketAmount)}</p>
+                            </div>
+                          </>
+                        )}
                         <div>
                           <p className="text-muted-foreground">Expected Life</p>
                           <p className="font-medium">{detail.expense.expectedLife} years</p>
@@ -297,6 +334,12 @@ export function YearDetailSidebar({
                           <p className="font-medium">{detail.expense.remainingLife} years</p>
                         </div>
                       </div>
+                      {detail.loanAmount > 0 && (
+                        <div className="mt-2 p-2 bg-blue-50 rounded text-xs">
+                          <p className="text-blue-700 font-medium">Large Expense - Loan Applied</p>
+                          <p className="text-blue-600">Threshold: {model.loanThresholdPercentage}% • Baseline: {formatCurrency(model.largeExpenseBaseline || 0)}</p>
+                        </div>
+                      )}
                     </div>
                   ))}
                   <Separator />
@@ -321,6 +364,55 @@ export function YearDetailSidebar({
                 <p className="text-center text-muted-foreground py-4">
                   No scheduled expenses for this year
                 </p>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Loan Details */}
+          {((adjustedProjection.loansTaken || 0) > 0 || (adjustedProjection.loanPayments || 0) > 0) && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center space-x-2">
+                  <CreditCard className="h-5 w-5 text-blue-600" />
+                  <span>Loan Activity</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {(adjustedProjection.loansTaken || 0) > 0 && (
+                  <div>
+                    <h4 className="font-medium text-blue-700 mb-2">Loans Taken This Year</h4>
+                    <div className="text-center bg-blue-50 rounded-lg p-3">
+                      <p className="text-xl font-bold text-blue-600">
+                        {formatCurrency(adjustedProjection.loansTaken || 0)}
+                      </p>
+                      <div className="text-xs text-blue-600 mt-1">
+                        <p>Loan Tenure: {model.loanTenureYears || 10} years</p>
+                        <p>Interest Rate: {model.loanInterestRate || 5}%</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {(adjustedProjection.loanPayments || 0) > 0 && (
+                  <div>
+                    <h4 className="font-medium text-purple-700 mb-2">Loan Payments This Year</h4>
+                    <div className="text-center bg-purple-50 rounded-lg p-3">
+                      <p className="text-xl font-bold text-purple-600">
+                        {formatCurrency(adjustedProjection.loanPayments || 0)}
+                      </p>
+                      {adjustedProjection.loanDetails && adjustedProjection.loanDetails.length > 0 && (
+                        <div className="text-xs text-purple-600 mt-2 space-y-1">
+                          {adjustedProjection.loanDetails.map((loan, index) => (
+                            <div key={index} className="flex justify-between">
+                              <span>Loan from {loan.year}:</span>
+                              <span>{formatCurrency(loan.payment)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}
@@ -514,6 +606,44 @@ export function YearDetailSidebar({
                           </FormItem>
                         )}
                       />
+
+                      <FormField
+                        control={form.control}
+                        name="loansTaken"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Loans Taken ($)</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                {...field}
+                                onChange={e => field.onChange(+e.target.value)}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="loanPayments"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Loan Payments ($)</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                {...field}
+                                onChange={e => field.onChange(+e.target.value)}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
                     </div>
 
                     <div className="p-3 bg-gray-50 rounded-lg text-sm">
@@ -522,7 +652,7 @@ export function YearDetailSidebar({
                         {formatCurrency(adjustedProjection.closingBalance)}
                       </p>
                       <p className="text-xs text-muted-foreground mt-1">
-                        Opening Balance + Collections - Expenses - Safety Net
+                        Opening Balance + Collections + Loans Taken - Expenses - Safety Net - Loan Payments
                       </p>
                       {model.minimumCollectionFee > 0 && (
                         <p className="text-xs text-blue-600 mt-2">

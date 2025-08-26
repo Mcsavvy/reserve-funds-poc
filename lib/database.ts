@@ -76,6 +76,16 @@ export const createDatabase = async (): Promise<ReserveFundsDatabase> => {
             ...oldDoc,
             minimumCollectionFee: 0 // Default value for new field
           };
+        },
+        // Migration from version 1 to 2: add loan-related fields
+        2: function(oldDoc: any) {
+          return {
+            ...oldDoc,
+            largeExpenseBaseline: 10000, // Default: expenses over $10,000 are considered large
+            loanThresholdPercentage: 70, // Default: 70% of large expenses covered by loans
+            loanTenureYears: 10, // Default: 10-year loan tenure
+            loanInterestRate: 5.0 // Default: 5% interest rate
+          };
         }
       }
     },

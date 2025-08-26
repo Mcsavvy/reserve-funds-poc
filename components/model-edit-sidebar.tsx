@@ -258,6 +258,66 @@ export function ModelEditSidebar({ open, onOpenChange, model, onSave }: ModelEdi
                   </FormItem>
                 )}
               />
+
+              {/* Large Expense Baseline */}
+              <FormField
+                control={form.control}
+                name="largeExpenseBaseline"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Large Expense Baseline ($)</FormLabel>
+                    <FormControl>
+                      <Input type="number" step="0.01" {...field} onChange={e => field.onChange(+e.target.value)} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Loan Threshold Percentage */}
+              <FormField
+                control={form.control}
+                name="loanThresholdPercentage"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Loan Threshold (%)</FormLabel>
+                    <FormControl>
+                      <Input type="number" step="0.1" {...field} onChange={e => field.onChange(+e.target.value)} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Loan Tenure Years */}
+              <FormField
+                control={form.control}
+                name="loanTenureYears"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Loan Tenure (years)</FormLabel>
+                    <FormControl>
+                      <Input type="number" {...field} onChange={e => field.onChange(+e.target.value)} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Loan Interest Rate */}
+              <FormField
+                control={form.control}
+                name="loanInterestRate"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Loan Interest Rate (%)</FormLabel>
+                    <FormControl>
+                      <Input type="number" step="0.1" {...field} onChange={e => field.onChange(+e.target.value)} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </div>
 
             <div className="flex justify-end space-x-2 pt-4">

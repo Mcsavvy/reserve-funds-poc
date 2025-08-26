@@ -33,13 +33,15 @@ const columnHelper = createColumnHelper<YearProjection>();
 
 // Utility function to convert projections to CSV format
 function projectionsToCSV(projections: YearProjection[]): string {
-  const headers = ['Year', 'Opening Balance', 'Collections', 'Expenses', 'Safety Net', 'Closing Balance'];
+  const headers = ['Year', 'Opening Balance', 'Collections', 'Expenses', 'Safety Net', 'Loans Taken', 'Loan Payments', 'Closing Balance'];
   const rows = projections.map(p => [
     p.year,
     p.openingBalance,
     p.collections,
     p.expenses,
     p.safetyNet,
+    p.loansTaken || 0,
+    p.loanPayments || 0,
     p.closingBalance
   ]);
   
@@ -52,13 +54,15 @@ function projectionsToCSV(projections: YearProjection[]): string {
 
 // Utility function to copy table data to clipboard
 async function copyTableToClipboard(projections: YearProjection[]): Promise<void> {
-  const headers = ['Year', 'Opening Balance', 'Collections', 'Expenses', 'Safety Net', 'Closing Balance'];
+  const headers = ['Year', 'Opening Balance', 'Collections', 'Expenses', 'Safety Net', 'Loans Taken', 'Loan Payments', 'Closing Balance'];
   const rows = projections.map(p => [
     p.year,
     formatCurrency(p.openingBalance),
     formatCurrency(p.collections),
     formatCurrency(p.expenses),
     formatCurrency(p.safetyNet),
+    formatCurrency(p.loansTaken || 0),
+    formatCurrency(p.loanPayments || 0),
     formatCurrency(p.closingBalance)
   ]);
   
@@ -173,6 +177,49 @@ export function ProjectionTable({ projections, onYearClick }: ProjectionTablePro
         </div>
       ),
     }),
+    columnHelper.accessor('loansTaken', {
+      header: 'Loans Taken',
+      cell: (info) => {
+        const value = info.getValue() || 0;
+        return (
+          <div className="space-y-1">
+            <div className={cn(
+              "font-medium",
+              value > 0 ? "text-blue-600" : "text-gray-500"
+            )}>
+              {formatCurrency(value)}
+            </div>
+            {value > 0 && (
+              <Badge variant="outline" className="text-xs text-blue-600 border-blue-600">
+                Loan
+              </Badge>
+            )}
+          </div>
+        );
+      },
+    }),
+    columnHelper.accessor('loanPayments', {
+      header: 'Loan Payments',
+      cell: (info) => {
+        const value = info.getValue() || 0;
+        const loanCount = info.row.original.loanDetails?.length || 0;
+        return (
+          <div className="space-y-1">
+            <div className={cn(
+              "font-medium",
+              value > 0 ? "text-purple-600" : "text-gray-500"
+            )}>
+              {formatCurrency(value)}
+            </div>
+            {loanCount > 0 && (
+              <Badge variant="secondary" className="text-xs">
+                {loanCount} loan{loanCount > 1 ? 's' : ''}
+              </Badge>
+            )}
+          </div>
+        );
+      },
+    }),
     columnHelper.accessor('closingBalance', {
       header: 'Closing Balance',
       cell: (info) => {
@@ -268,6 +315,7 @@ export function ProjectionTable({ projections, onYearClick }: ProjectionTablePro
               const isNegative = projection.closingBalance < 0;
               const isLow = projection.closingBalance < 50000 && projection.closingBalance >= 0;
               const hasExpenses = projection.expenseDetails.length > 0;
+              const hasLoans = (projection.loansTaken || 0) > 0 || (projection.loanPayments || 0) > 0;
               
               return (
                 <TableRow
@@ -277,7 +325,9 @@ export function ProjectionTable({ projections, onYearClick }: ProjectionTablePro
                     "hover:bg-gray-50",
                     isNegative && "bg-red-50 hover:bg-red-100",
                     isLow && !isNegative && "bg-yellow-50 hover:bg-yellow-100",
-                    hasExpenses && "border-l-4 border-l-blue-500"
+                    hasExpenses && "border-l-4 border-l-blue-500",
+                    hasLoans && !hasExpenses && "border-l-4 border-l-purple-500",
+                    hasExpenses && hasLoans && "border-l-4 border-l-gradient-to-b border-l-blue-500"
                   )}
                   onClick={() => onYearClick(projection)}
                 >

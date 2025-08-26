@@ -16,6 +16,10 @@ export const ModelSchema = z.object({
   bankInterestRate: z.number().min(0, 'Bank interest rate must be non-negative').max(100, 'Bank interest rate must be less than 100'),
   safetyNetPercentage: z.number().min(0, 'Safety net percentage must be non-negative').max(100, 'Safety net percentage must be less than 100'),
   cashReserveThresholdPercentage: z.number().min(0, 'Cash reserve threshold must be non-negative').max(100, 'Cash reserve threshold must be less than 100'),
+  largeExpenseBaseline: z.number().min(0, 'Large expense baseline must be non-negative'),
+  loanThresholdPercentage: z.number().min(0, 'Loan threshold percentage must be non-negative').max(100, 'Loan threshold percentage must be less than 100'),
+  loanTenureYears: z.number().min(1, 'Loan tenure must be at least 1 year').max(50, 'Loan tenure must be 50 years or less'),
+  loanInterestRate: z.number().min(0, 'Loan interest rate must be non-negative').max(100, 'Loan interest rate must be less than 100'),
   createdAt: z.string().max(50, 'Created date must be 50 characters or less'),
   updatedAt: z.string().max(50, 'Updated date must be 50 characters or less'),
 });
@@ -46,7 +50,7 @@ export type Expense = z.infer<typeof ExpenseSchema>;
 
 // RxDB schema for Model collection
 export const modelRxSchema: RxJsonSchema<Model> = {
-  version: 1,
+  version: 2,
   primaryKey: 'id',
   type: 'object',
   properties: {
@@ -109,6 +113,26 @@ export const modelRxSchema: RxJsonSchema<Model> = {
       minimum: 0,
       maximum: 100,
     },
+    largeExpenseBaseline: {
+      type: 'number',
+      minimum: 0,
+    },
+    loanThresholdPercentage: {
+      type: 'number',
+      minimum: 0,
+      maximum: 100,
+    },
+    loanTenureYears: {
+      type: 'number',
+      minimum: 1,
+      maximum: 50,
+      multipleOf: 1,
+    },
+    loanInterestRate: {
+      type: 'number',
+      minimum: 0,
+      maximum: 100,
+    },
     createdAt: {
       type: 'string',
       format: 'date-time',
@@ -133,6 +157,10 @@ export const modelRxSchema: RxJsonSchema<Model> = {
     'bankInterestRate',
     'safetyNetPercentage',
     'cashReserveThresholdPercentage',
+    'largeExpenseBaseline',
+    'loanThresholdPercentage',
+    'loanTenureYears',
+    'loanInterestRate',
     'createdAt',
     'updatedAt',
   ],

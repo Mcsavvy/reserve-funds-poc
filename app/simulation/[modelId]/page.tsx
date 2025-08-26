@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, Edit, TrendingUp, TrendingDown, AlertTriangle, DollarSign, Zap } from 'lucide-react';
+import { ArrowLeft, Edit, TrendingUp, TrendingDown, AlertTriangle, DollarSign, Zap, CreditCard, PiggyBank } from 'lucide-react';
 import { formatCurrency } from '@/lib/db-utils';
 import { ProjectionTable } from '@/components/projection-table';
 import { ModelEditSidebar } from '@/components/model-edit-sidebar';
@@ -74,6 +74,50 @@ export default function SimulationPage() {
     if (projections.length === 0) return null;
     return getProjectionStats(projections);
   }, [projections]);
+
+  // Calculate large expense and loan stats
+  const extendedStats = useMemo(() => {
+    if (projections.length === 0 || !simulationParams) return null;
+    
+    let totalLargeExpenses = 0;
+    let largeExpenseCount = 0;
+    let totalLoanAmount = 0;
+    let totalLoanPayments = 0;
+    let yearsWithLoans = 0;
+    let yearsWithLoanPayments = 0;
+    
+    projections.forEach(projection => {
+      // Count large expenses
+      projection.expenseDetails.forEach(detail => {
+        if (detail.loanAmount > 0) {
+          totalLargeExpenses += detail.inflatedCost;
+          largeExpenseCount++;
+        }
+      });
+      
+      // Count loan activity
+      if ((projection.loansTaken || 0) > 0) {
+        totalLoanAmount += projection.loansTaken || 0;
+        yearsWithLoans++;
+      }
+      
+      if ((projection.loanPayments || 0) > 0) {
+        totalLoanPayments += projection.loanPayments || 0;
+        yearsWithLoanPayments++;
+      }
+    });
+    
+    return {
+      totalLargeExpenses,
+      largeExpenseCount,
+      totalLoanAmount,
+      totalLoanPayments,
+      yearsWithLoans,
+      yearsWithLoanPayments,
+      averageLoanPerYear: yearsWithLoans > 0 ? totalLoanAmount / yearsWithLoans : 0,
+      netLoanImpact: totalLoanAmount - totalLoanPayments
+    };
+  }, [projections, simulationParams]);
 
   const handleModelEdit = (updatedParams: SimulationParams) => {
     setSimulationParams(updatedParams);
@@ -176,7 +220,7 @@ export default function SimulationPage() {
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-4">
               <Button
@@ -230,10 +274,10 @@ export default function SimulationPage() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Stats Cards */}
-        {stats && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        {stats && extendedStats && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6 mb-8">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Final Balance</CardTitle>
@@ -301,6 +345,47 @@ export default function SimulationPage() {
                 </p>
               </CardContent>
             </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Large Expenses</CardTitle>
+                <PiggyBank className="h-4 w-4 text-purple-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-purple-600">
+                  {formatCurrency(extendedStats.totalLargeExpenses)}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {extendedStats.largeExpenseCount} expenses over baseline
+                </p>
+                <p className="text-xs text-purple-600 font-medium">
+                  Baseline: {formatCurrency(simulationParams?.largeExpenseBaseline || 0)}
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Loan Activity</CardTitle>
+                <CreditCard className="h-4 w-4 text-blue-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-1">
+                  <div className="text-2xl font-bold text-blue-600">
+                    {formatCurrency(extendedStats.totalLoanAmount)}
+                  </div>
+                  <div className="text-sm font-medium text-purple-600">
+                    -{formatCurrency(extendedStats.totalLoanPayments)}
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Loans taken vs payments made
+                </p>
+                <p className="text-xs font-medium text-gray-700">
+                  Net: {formatCurrency(extendedStats.netLoanImpact)}
+                </p>
+              </CardContent>
+            </Card>
           </div>
         )}
 
@@ -353,6 +438,8 @@ export default function SimulationPage() {
                             year: p.year,
                             collections: p.collections,
                             expenses: p.expenses,
+                            loansTaken: p.loansTaken || 0,
+                            loanPayments: p.loanPayments || 0,
                             closingBalance: p.closingBalance,
                           }))}
                           margin={{
@@ -377,14 +464,31 @@ export default function SimulationPage() {
                           <Tooltip 
                             content={({ active, payload, label }: { active?: boolean; payload?: any[]; label?: string }) => {
                               if (active && payload && payload.length) {
+                                const data = payload[0]?.payload;
                                 return (
                                   <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-xl">
                                     <p className="font-semibold text-gray-900 mb-2">Year {label}</p>
-                                    {payload.map((entry: any, index: number) => (
-                                      <p key={index} className="text-sm mb-1" style={{ color: entry.color }}>
-                                        {entry.name}: {formatCurrency(entry.value as number)}
+                                    <div className="space-y-1">
+                                      <p className="text-sm text-blue-600">
+                                        Collections: {formatCurrency(data?.collections || 0)}
                                       </p>
-                                    ))}
+                                      <p className="text-sm text-red-600">
+                                        Expenses: {formatCurrency(data?.expenses || 0)}
+                                      </p>
+                                      {(data?.loansTaken || 0) > 0 && (
+                                        <p className="text-sm text-purple-600">
+                                          Loans Taken: {formatCurrency(data?.loansTaken || 0)}
+                                        </p>
+                                      )}
+                                      {(data?.loanPayments || 0) > 0 && (
+                                        <p className="text-sm text-orange-600">
+                                          Loan Payments: {formatCurrency(data?.loanPayments || 0)}
+                                        </p>
+                                      )}
+                                      <p className="text-sm text-green-600 font-medium border-t pt-1">
+                                        Closing Balance: {formatCurrency(data?.closingBalance || 0)}
+                                      </p>
+                                    </div>
                                   </div>
                                 );
                               }
@@ -413,6 +517,26 @@ export default function SimulationPage() {
                             strokeWidth={3}
                             dot={{ fill: '#ef4444', strokeWidth: 2, r: 5 }}
                             activeDot={{ r: 8, stroke: '#ef4444', strokeWidth: 2 }}
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="loansTaken"
+                            name="Loans Taken"
+                            stroke="#8b5cf6"
+                            strokeWidth={2}
+                            strokeDasharray="5 5"
+                            dot={{ fill: '#8b5cf6', strokeWidth: 2, r: 4 }}
+                            activeDot={{ r: 6, stroke: '#8b5cf6', strokeWidth: 2 }}
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="loanPayments"
+                            name="Loan Payments"
+                            stroke="#f59e0b"
+                            strokeWidth={2}
+                            strokeDasharray="3 3"
+                            dot={{ fill: '#f59e0b', strokeWidth: 2, r: 4 }}
+                            activeDot={{ r: 6, stroke: '#f59e0b', strokeWidth: 2 }}
                           />
                           <Line
                             type="monotone"
@@ -502,7 +626,7 @@ export default function SimulationPage() {
                       </ResponsiveContainer>
                     </div>
                     
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
                       <div className="text-center p-6 bg-blue-50 rounded-lg border border-blue-200">
                         <div className="text-3xl font-bold text-blue-600 mb-2">
                           {formatCurrency(Math.max(...projections.map(p => p.collections)))}
@@ -514,6 +638,18 @@ export default function SimulationPage() {
                           {formatCurrency(Math.max(...projections.map(p => p.expenses)))}
                         </div>
                         <div className="text-sm text-red-700 font-medium">Peak Expenses</div>
+                      </div>
+                      <div className="text-center p-6 bg-purple-50 rounded-lg border border-purple-200">
+                        <div className="text-3xl font-bold text-purple-600 mb-2">
+                          {formatCurrency(Math.max(...projections.map(p => p.loansTaken || 0)))}
+                        </div>
+                        <div className="text-sm text-purple-700 font-medium">Peak Loans Taken</div>
+                      </div>
+                      <div className="text-center p-6 bg-orange-50 rounded-lg border border-orange-200">
+                        <div className="text-3xl font-bold text-orange-600 mb-2">
+                          {formatCurrency(Math.max(...projections.map(p => p.loanPayments || 0)))}
+                        </div>
+                        <div className="text-sm text-orange-700 font-medium">Peak Loan Payments</div>
                       </div>
                       <div className="text-center p-6 bg-green-50 rounded-lg border border-green-200">
                         <div className="text-3xl font-bold text-green-600 mb-2">

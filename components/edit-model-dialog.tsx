@@ -58,6 +58,10 @@ export function EditModelDialog({ model, open, onOpenChange }: EditModelDialogPr
         bankInterestRate: model.bankInterestRate,
         safetyNetPercentage: model.safetyNetPercentage,
         cashReserveThresholdPercentage: model.cashReserveThresholdPercentage,
+        largeExpenseBaseline: model.largeExpenseBaseline || 10000,
+        loanThresholdPercentage: model.loanThresholdPercentage || 70,
+        loanTenureYears: model.loanTenureYears || 10,
+        loanInterestRate: model.loanInterestRate || 5.0,
       });
     }
   }, [model, form]);
@@ -260,6 +264,66 @@ export function EditModelDialog({ model, open, onOpenChange }: EditModelDialogPr
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Cash Reserve Threshold (%)</FormLabel>
+                    <FormControl>
+                      <Input type="number" step="0.1" {...field} onChange={e => field.onChange(+e.target.value)} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Large Expense Baseline */}
+              <FormField
+                control={form.control}
+                name="largeExpenseBaseline"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Large Expense Baseline ($)</FormLabel>
+                    <FormControl>
+                      <Input type="number" step="0.01" {...field} onChange={e => field.onChange(+e.target.value)} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Loan Threshold Percentage */}
+              <FormField
+                control={form.control}
+                name="loanThresholdPercentage"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Loan Threshold (%)</FormLabel>
+                    <FormControl>
+                      <Input type="number" step="0.1" {...field} onChange={e => field.onChange(+e.target.value)} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Loan Tenure Years */}
+              <FormField
+                control={form.control}
+                name="loanTenureYears"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Loan Tenure (years)</FormLabel>
+                    <FormControl>
+                      <Input type="number" {...field} onChange={e => field.onChange(+e.target.value)} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Loan Interest Rate */}
+              <FormField
+                control={form.control}
+                name="loanInterestRate"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Loan Interest Rate (%)</FormLabel>
                     <FormControl>
                       <Input type="number" step="0.1" {...field} onChange={e => field.onChange(+e.target.value)} />
                     </FormControl>
