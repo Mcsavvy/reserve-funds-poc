@@ -212,8 +212,7 @@ export interface OptimizationResult {
 export function optimizeCollectionFees(
   params: SimulationParams,
   expenses: Expense[],
-  targetMinBalance: number = 50000,
-  targetMaxBalance: number = 500000
+  targetMinBalance: number = 0,
 ): OptimizationResult {
   // ------------- PREPARATION -------------
   const originalProjections = generateProjections(params, expenses);
