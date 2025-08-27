@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -82,6 +82,9 @@ export function AddModelDialog({ open, onOpenChange, onModelCreated }: AddModelD
   return (
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogDescription className="sr-only">
+          This tool helps you create a reserve fund model for a property.
+        </DialogDescription>
         <DialogHeader>
           <DialogTitle>Add New Reserve Fund Model</DialogTitle>
         </DialogHeader>

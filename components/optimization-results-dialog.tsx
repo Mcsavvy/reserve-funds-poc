@@ -4,6 +4,7 @@ import { useState } from 'react';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -58,6 +59,9 @@ export function OptimizationResultsDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogDescription className="sr-only">
+          This tool helps you optimize the fee structure for a reserve fund model.
+        </DialogDescription>
         <DialogHeader>
           <DialogTitle className="flex items-center space-x-2">
             {isOptimal ? (
