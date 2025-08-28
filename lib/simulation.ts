@@ -394,7 +394,7 @@ export function optimizeCollectionFees(
   // Helper percentage → factor (e.g. 5 => 0.05)
   const maxIncreaseFactor = (params.maximumAllowableFeeIncrease ?? 0) / 100;
   const housingUnits = params.housingUnits ?? 0;
-  const minFee = params.minimumCollectionFee;
+  let adaptiveMinFee = params.minimumCollectionFee; // This will increase if zero fees cause deficits
 
   let optimizedProjections: YearProjection[] = JSON.parse(JSON.stringify(originalProjections));
 
@@ -421,7 +421,7 @@ export function optimizeCollectionFees(
   // ------------- IDENTIFY EXPENSE YEARS (MILESTONES) -------------
   const expenseIndices: number[] = [];
   optimizedProjections.forEach((p, idx) => {
-    if (p.expenses > 0) {
+    if (p.expenses > 0 || (p.loanPayments || 0) > 0) {
       expenseIndices.push(idx);
     }
   });
@@ -435,7 +435,9 @@ export function optimizeCollectionFees(
   const requiredClosingBalances = new Map<number, number>();
 
   for (let iter = 0; iter < 10; iter++) { // Iterate to solve for inter-period dependencies
-    let projectionsThisIteration = JSON.parse(JSON.stringify(originalProjections));
+    // CRITICAL: Recalculate projections from scratch for each iteration
+    // This ensures loan amounts/payments are consistent with the fee structure being tested
+    let projectionsThisIteration = generateProjections(params, expenses);
     let lastProcessedIdx = -1;
     let openingBalance = params.startingAmount;
     let prevYearCollectionFee = 0;
@@ -454,14 +456,14 @@ export function optimizeCollectionFees(
         requiredFundsAtMilestone,
         maxIncreaseFactor,
         housingUnits,
-        minFee
+        adaptiveMinFee // Use adaptive minimum fee that increases if deficits occur
       );
 
       if (lastProcessedIdx >= 0) {
         const maxAllowedFee = prevYearCollectionFee * (1 + maxIncreaseFactor);
         baseFee = Math.min(baseFee, maxAllowedFee);
       }
-      baseFee = Math.max(baseFee, minFee);
+      baseFee = Math.max(baseFee, adaptiveMinFee);
 
       // Apply fees and update projections for the current period
       let feeThisYear = baseFee;
@@ -473,13 +475,23 @@ export function optimizeCollectionFees(
         yearProj.collections = feeThisYear * 12 * housingUnits;
         yearProj.closingBalance =
           yearProj.openingBalance +
-          yearProj.collections -
+          yearProj.collections +
+          (yearProj.loansTaken || 0) -
           yearProj.expenses -
-          yearProj.safetyNet;
+          yearProj.safetyNet -
+          (yearProj.loanPayments || 0);
 
         openingBalance = yearProj.closingBalance;
         prevYearCollectionFee = feeThisYear;
-        feeThisYear *= (1 + maxIncreaseFactor);
+        
+        // Handle fee progression: avoid the "zero trap" where 0 * (1 + increase) = 0 forever
+        if (feeThisYear === 0) {
+          // If current fee is zero, allow a minimal starting fee for next year if needed
+          // This ensures the algorithm can recover from zero fees when cash needs arise
+          feeThisYear = Math.max(adaptiveMinFee, 1.0); // Start with at least $1/month
+        } else {
+          feeThisYear *= (1 + maxIncreaseFactor);
+        }
       }
       lastProcessedIdx = milestoneIdx;
     }
@@ -490,9 +502,19 @@ export function optimizeCollectionFees(
       break; // Success: no deficits found
     }
 
-    // Deficit found: update the requirements for the next iteration
+    // Deficit found: diagnose and fix
     const firstDeficitIdx = projectionsThisIteration.findIndex((p: YearProjection) => p.closingBalance < targetMinBalance);
     const deficitAmount = targetMinBalance - projectionsThisIteration[firstDeficitIdx].closingBalance;
+
+    // Check if the deficit might be caused by zero/low fees allowing deficits in later years
+    const avgFeeAcrossPeriod = projectionsThisIteration.reduce((sum, p) => 
+      sum + (housingUnits > 0 ? p.collections / (12 * housingUnits) : 0), 0
+    ) / projectionsThisIteration.length;
+    
+    if (avgFeeAcrossPeriod < 1.0) {
+      // Very low average fee - increase adaptive minimum to prevent zero trap
+      adaptiveMinFee = Math.max(adaptiveMinFee + 5.0, 5.0);
+    }
 
     let culpritMilestoneIdx = -1;
     for (const m of milestones) {
@@ -508,12 +530,46 @@ export function optimizeCollectionFees(
       requiredClosingBalances.set(culpritMilestoneIdx, currentRequirement + deficitAmount);
     } else {
       // Deficit is in the first period, cannot be fixed by increasing prior period's closing balance.
-      optimizedProjections = projectionsThisIteration; // Keep the result with the deficit
-      break;
+      // Try increasing the adaptive minimum fee
+      adaptiveMinFee = Math.max(adaptiveMinFee + 10.0, 10.0);
     }
     
     if (iter === 9) { // If we max out iterations, keep the last result
       optimizedProjections = projectionsThisIteration;
+    }
+  }
+  
+  // ------------- POST-LOOP SAFEGUARD -------------
+  // If we still have deficits after 10 iterations, apply a uniform fee increase
+  const finalStats = getProjectionStats(optimizedProjections);
+  if (finalStats.negativeBalanceYears > 0) {
+    const totalDeficit = Math.abs(finalStats.minBalance - targetMinBalance);
+    const uniformFeeIncrease = (totalDeficit / params.period) / (12 * housingUnits);
+    
+    // Apply uniform increase to all years
+    for (let i = 0; i < optimizedProjections.length; i++) {
+      const additionalCollections = uniformFeeIncrease * 12 * housingUnits;
+      optimizedProjections[i].collections += additionalCollections;
+      
+      // Recalculate closing balances
+      if (i === 0) {
+        optimizedProjections[i].closingBalance = 
+          params.startingAmount + 
+          optimizedProjections[i].collections + 
+          (optimizedProjections[i].loansTaken || 0) - 
+          optimizedProjections[i].expenses - 
+          optimizedProjections[i].safetyNet - 
+          (optimizedProjections[i].loanPayments || 0);
+      } else {
+        optimizedProjections[i].openingBalance = optimizedProjections[i - 1].closingBalance;
+        optimizedProjections[i].closingBalance = 
+          optimizedProjections[i].openingBalance + 
+          optimizedProjections[i].collections + 
+          (optimizedProjections[i].loansTaken || 0) - 
+          optimizedProjections[i].expenses - 
+          optimizedProjections[i].safetyNet - 
+          (optimizedProjections[i].loanPayments || 0);
+      }
     }
   }
 
@@ -608,9 +664,33 @@ function solveForBaseFee(
   // quick guard
   if (housingUnits === 0) return minFee;
 
-  // upper bound guess – start with a reasonably large number.
-  let low = minFee;
-  let high = minFee * 100 + 1000; // heuristic upper bound
+  // Calculate reasonable bounds based on period cash flows
+  const totalOutflows = periodYears.reduce((sum, yr) => 
+    sum + yr.expenses + yr.safetyNet + (yr.loanPayments || 0), 0
+  );
+  const totalInflows = periodYears.reduce((sum, yr) => 
+    sum + (yr.loansTaken || 0), 0
+  );
+  
+  // Calculate future loan payments that might not be captured in current period
+  // This helps avoid the zero-trap by considering ongoing debt service obligations
+  const futureLoanPaymentEstimate = periodYears.reduce((sum, yr) => 
+    sum + (yr.loansTaken || 0) * 0.1, 0 // Rough estimate: 10% of loans taken as annual payment
+  );
+  
+  const practicalMinFee = Math.max(minFee, 0);
+  
+  // Calculate net cash need (what collections must cover after loans and opening balance)
+  // Include future loan payment estimate to prevent zero-trap scenarios
+  const netCashNeed = Math.max(0, 
+    totalOutflows + futureLoanPaymentEstimate - totalInflows - openingBalance + requiredFundsAtMilestone
+  );
+  const estimatedAnnualCollections = netCashNeed / Math.max(periodYears.length, 1);
+  const estimatedMonthlyFee = estimatedAnnualCollections / (12 * housingUnits);
+  
+  // Set more conservative bounds that account for loan-related cash flows
+  let low = practicalMinFee;
+  let high = Math.max(estimatedMonthlyFee * 1.5, Math.max(practicalMinFee + 10, 50));
 
   for (let iter = 0; iter < 40; iter++) {
     const mid = (low + high) / 2;
@@ -630,7 +710,7 @@ function solveForBaseFee(
     }
   }
 
-  return high; // smallest fee that meets requirement
+  return Math.max(high, practicalMinFee); // ensure we never go below practical minimum
 }
 
 function simulatePeriodMinBalance(
@@ -650,9 +730,15 @@ function simulatePeriodMinBalance(
   for (let i = 0; i < periodYears.length; i++) {
     const yr = periodYears[i];
     const collections = fee * 12 * housingUnits;
-    balance = balance + collections - yr.expenses - yr.safetyNet;
+    balance = balance + collections + (yr.loansTaken || 0) - yr.expenses - yr.safetyNet - (yr.loanPayments || 0);
     minBalance = Math.min(minBalance, balance);
-    fee = fee * (1 + maxIncreaseFactor);
+    
+    // Handle fee progression: avoid the "zero trap"
+    if (fee === 0) {
+      fee = Math.max(1.0, baseFee); // Reset to a minimal fee if zero
+    } else {
+      fee = fee * (1 + maxIncreaseFactor);
+    }
   }
 
   return minBalance;
