@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useModels, useExpenses } from '@/hooks/use-database';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,9 +14,10 @@ import { ManageExpensesDialog } from '@/components/manage-expenses-dialog';
 import { Model } from '@/lib/db-schemas';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 
 export default function HomePage() {
-  const { models, isLoading: modelsLoading, error: modelsError, deleteModel } = useModels();
+  const { models, isLoading: modelsLoading, error: modelsError, deleteModel, copyModelToClipboard, pasteModelFromClipboard } = useModels();
   const { expenses } = useExpenses(); // Get all expenses for stats
   const router = useRouter();
   
@@ -24,6 +25,7 @@ export default function HomePage() {
   const [editingModel, setEditingModel] = useState<Model | null>(null);
   const [managingExpensesModel, setManagingExpensesModel] = useState<Model | null>(null);
   const [newlyCreatedModelId, setNewlyCreatedModelId] = useState<string | null>(null);
+  const [canPaste, setCanPaste] = useState(false);
 
   // Calculate stats
   const totalModels = models.length;
@@ -32,6 +34,29 @@ export default function HomePage() {
     ? models.reduce((sum, model) => sum + model.monthlyReserveFeesPerHousingUnit, 0) / models.length 
     : 0;
   const totalExpenses = expenses.reduce((sum, expense) => sum + expense.cost, 0);
+
+  // Check if we can paste from clipboard on load
+  useEffect(() => {
+    const checkClipboard = async () => {
+      try {
+        if (navigator.clipboard && navigator.clipboard.readText) {
+          const text = await navigator.clipboard.readText();
+          const data = JSON.parse(text);
+          setCanPaste(data.type === 'reserve-fund-model-copy' && data.model);
+        }
+      } catch {
+        setCanPaste(false);
+      }
+    };
+
+    checkClipboard();
+    
+    // Recheck clipboard when the window gains focus
+    const handleFocus = () => checkClipboard();
+    window.addEventListener('focus', handleFocus);
+    
+    return () => window.removeEventListener('focus', handleFocus);
+  }, []);
 
   const handleDeleteModel = async (model: Model) => {
     if (confirm(`Are you sure you want to delete "${model.name}"? This will also delete all associated expenses.`)) {
@@ -63,6 +88,39 @@ export default function HomePage() {
     const newModel = models.find(m => m.id === modelId);
     if (newModel) {
       setManagingExpensesModel(newModel);
+    }
+  };
+
+  const handleCopyModel = async (model: Model) => {
+    try {
+      await copyModelToClipboard(model);
+      setCanPaste(true);
+      toast.success(`Model "${model.name}" copied to clipboard`, {
+        description: 'The model and all its expenses have been copied. You can now paste it.',
+      });
+    } catch (error) {
+      console.error('Failed to copy model:', error);
+      toast.error('Failed to copy model', {
+        description: error instanceof Error ? error.message : 'An unexpected error occurred',
+      });
+    }
+  };
+
+  const handlePasteModel = async () => {
+    try {
+      const pastedModel = await pasteModelFromClipboard();
+      toast.success(`Model "${pastedModel.name}" pasted successfully`, {
+        description: 'The model and all its expenses have been created.',
+      });
+      
+      // Auto-open expenses dialog for the pasted model
+      setManagingExpensesModel(pastedModel);
+      setNewlyCreatedModelId(pastedModel.id);
+    } catch (error) {
+      console.error('Failed to paste model:', error);
+      toast.error('Failed to paste model', {
+        description: error instanceof Error ? error.message : 'An unexpected error occurred',
+      });
     }
   };
 
@@ -192,6 +250,9 @@ export default function HomePage() {
               onDelete={handleDeleteModel}
               onManageExpenses={handleManageExpenses}
               onSimulate={handleSimulate}
+              onCopy={handleCopyModel}
+              onPaste={handlePasteModel}
+              canPaste={canPaste}
             />
           </CardContent>
         </Card>

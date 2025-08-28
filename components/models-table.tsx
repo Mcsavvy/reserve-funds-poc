@@ -23,7 +23,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Edit, Trash2, Settings, ChevronLeft, ChevronRight, Play } from 'lucide-react';
+import { Edit, Trash2, Settings, ChevronLeft, ChevronRight, Play, Copy, ClipboardPaste } from 'lucide-react';
 import { formatCurrency, formatPercentage } from '@/lib/db-utils';
 import { Model } from '@/lib/db-schemas';
 
@@ -33,11 +33,14 @@ interface ModelsTableProps {
   onDelete: (model: Model) => void;
   onManageExpenses: (model: Model) => void;
   onSimulate: (model: Model) => void;
+  onCopy: (model: Model) => void;
+  onPaste: () => void;
+  canPaste?: boolean;
 }
 
 const columnHelper = createColumnHelper<Model>();
 
-export function ModelsTable({ models, onEdit, onDelete, onManageExpenses, onSimulate }: ModelsTableProps) {
+export function ModelsTable({ models, onEdit, onDelete, onManageExpenses, onSimulate, onCopy, onPaste, canPaste = false }: ModelsTableProps) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [globalFilter, setGlobalFilter] = useState('');
@@ -101,6 +104,15 @@ export function ModelsTable({ models, onEdit, onDelete, onManageExpenses, onSimu
             <Button
               variant="ghost"
               size="sm"
+              onClick={() => onCopy(model)}
+              className="h-8 w-8 p-0 text-blue-600 hover:text-blue-700"
+              title="Copy Model & Expenses"
+            >
+              <Copy className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => onManageExpenses(model)}
               className="h-8 w-8 p-0"
               title="Manage Expenses"
@@ -155,14 +167,25 @@ export function ModelsTable({ models, onEdit, onDelete, onManageExpenses, onSimu
 
   return (
     <div className="space-y-4">
-      {/* Search */}
-      <div className="flex items-center space-x-2">
+      {/* Search and Paste */}
+      <div className="flex items-center justify-between">
         <Input
           placeholder="Search models..."
           value={globalFilter}
           onChange={(e) => setGlobalFilter(e.target.value)}
           className="max-w-sm"
         />
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onPaste}
+          disabled={!canPaste}
+          className="flex items-center space-x-2"
+          title="Paste Model from Clipboard"
+        >
+          <ClipboardPaste className="h-4 w-4" />
+          <span>Paste Model</span>
+        </Button>
       </div>
 
       {/* Table */}

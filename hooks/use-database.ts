@@ -153,6 +153,105 @@ export const useModels = () => {
     loadModels();
   }, [loadModels]);
 
+  // Copy model with expenses to clipboard
+  const copyModelToClipboard = useCallback(async (model: Model) => {
+    try {
+      const database = db || await getDatabase();
+      
+      // Get all expenses for this model
+      const expenseDocs = await database.expenses.find({ selector: { modelId: model.id } }).exec();
+      const expenses = expenseDocs.map(doc => doc.toJSON());
+      
+      // Create copy data structure
+      const copyData = {
+        model: {
+          ...model,
+          // Remove id, createdAt, updatedAt as these will be regenerated
+          id: undefined,
+          createdAt: undefined,
+          updatedAt: undefined,
+        },
+        expenses: expenses.map(expense => ({
+          ...expense,
+          // Remove id, modelId, createdAt, updatedAt as these will be regenerated
+          id: undefined,
+          modelId: undefined,
+          createdAt: undefined,
+          updatedAt: undefined,
+        })),
+        type: 'reserve-fund-model-copy',
+        timestamp: getCurrentTimestamp(),
+      };
+      
+      // Copy to clipboard
+      await navigator.clipboard.writeText(JSON.stringify(copyData, null, 2));
+      
+      return true;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to copy model to clipboard';
+      setError(errorMessage);
+      throw new Error(errorMessage);
+    }
+  }, [db]);
+
+  // Paste model from clipboard
+  const pasteModelFromClipboard = useCallback(async () => {
+    try {
+      const database = db || await getDatabase();
+      
+      // Read from clipboard
+      const clipboardText = await navigator.clipboard.readText();
+      const copyData = JSON.parse(clipboardText);
+      
+      // Validate clipboard data
+      if (copyData.type !== 'reserve-fund-model-copy' || !copyData.model) {
+        throw new Error('Clipboard does not contain valid model data');
+      }
+      
+      // Create the new model
+      const timestamp = getCurrentTimestamp();
+      const newModel: Model = {
+        ...copyData.model,
+        id: generateId(),
+        name: `${copyData.model.name} (Copy)`,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+      
+      // Validate with Zod
+      const validatedModel = ModelSchema.parse(newModel);
+      
+      // Insert the model
+      await database.models.insert(validatedModel);
+      
+      // Create expenses if any
+      if (copyData.expenses && Array.isArray(copyData.expenses)) {
+        for (const expenseData of copyData.expenses) {
+          const newExpense: Expense = {
+            ...expenseData,
+            id: generateId(),
+            modelId: validatedModel.id,
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          };
+          
+          // Validate with Zod
+          const validatedExpense = ExpenseSchema.parse(newExpense);
+          
+          // Insert the expense
+          await database.expenses.insert(validatedExpense);
+        }
+      }
+      
+      await loadModels(); // Refresh the list
+      return validatedModel;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to paste model from clipboard';
+      setError(errorMessage);
+      throw new Error(errorMessage);
+    }
+  }, [db, loadModels]);
+
   return {
     models,
     isLoading,
@@ -162,6 +261,8 @@ export const useModels = () => {
     deleteModel,
     getModel,
     loadModels,
+    copyModelToClipboard,
+    pasteModelFromClipboard,
   };
 };
 
