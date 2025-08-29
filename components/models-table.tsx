@@ -23,7 +23,14 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Edit, Trash2, Settings, ChevronLeft, ChevronRight, Play, Copy, ClipboardPaste } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Edit, Trash2, Settings, ChevronLeft, ChevronRight, Play, Copy, ClipboardPaste, MoreHorizontal, RefreshCw, Share2 } from 'lucide-react';
 import { formatCurrency, formatPercentage } from '@/lib/db-utils';
 import { Model } from '@/lib/db-schemas';
 
@@ -35,17 +42,37 @@ interface ModelsTableProps {
   onSimulate: (model: Model) => void;
   onCopy: (model: Model) => void;
   onPaste: () => void;
+  onRefresh: () => void;
+  onShare: (model: Model) => void;
   canPaste?: boolean;
 }
 
 const columnHelper = createColumnHelper<Model>();
 
-export function ModelsTable({ models, onEdit, onDelete, onManageExpenses, onSimulate, onCopy, onPaste, canPaste = false }: ModelsTableProps) {
+export function ModelsTable({ models, onEdit, onDelete, onManageExpenses, onSimulate, onCopy, onPaste, onRefresh, onShare, canPaste = false }: ModelsTableProps) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [globalFilter, setGlobalFilter] = useState('');
 
   const columns = [
+    columnHelper.display({
+      id: 'play',
+      header: '',
+      cell: (info) => {
+        const model = info.row.original;
+        return (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onSimulate(model)}
+            className="h-8 w-8 p-0 text-green-600 hover:text-green-700"
+            title="Run Simulation"
+          >
+            <Play className="h-4 w-4" />
+          </Button>
+        );
+      },
+    }),
     columnHelper.accessor('name', {
       header: 'Model Name',
       cell: (info) => (
@@ -91,53 +118,42 @@ export function ModelsTable({ models, onEdit, onDelete, onManageExpenses, onSimu
       cell: (info) => {
         const model = info.row.original;
         return (
-          <div className="flex items-center space-x-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onSimulate(model)}
-              className="h-8 w-8 p-0 text-green-600 hover:text-green-700 opacity-0 group-hover:opacity-100 transition-opacity"
-              title="Run Simulation"
-            >
-              <Play className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onCopy(model)}
-              className="h-8 w-8 p-0 text-blue-600 hover:text-blue-700"
-              title="Copy Model & Expenses"
-            >
-              <Copy className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onManageExpenses(model)}
-              className="h-8 w-8 p-0"
-              title="Manage Expenses"
-            >
-              <Settings className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onEdit(model)}
-              className="h-8 w-8 p-0"
-              title="Edit Model"
-            >
-              <Edit className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onDelete(model)}
-              className="h-8 w-8 p-0 text-red-500 hover:text-red-700"
-              title="Delete Model"
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0"
+                title="More actions"
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem onClick={() => onCopy(model)} className="flex items-center space-x-2">
+                <Copy className="h-4 w-4 text-blue-600" />
+                <span>Copy Model</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onShare(model)} className="flex items-center space-x-2">
+                <Share2 className="h-4 w-4 text-green-600" />
+                <span>Share Model</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => onManageExpenses(model)} className="flex items-center space-x-2">
+                <Settings className="h-4 w-4" />
+                <span>Manage Expenses</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onEdit(model)} className="flex items-center space-x-2">
+                <Edit className="h-4 w-4" />
+                <span>Edit Model</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => onDelete(model)} className="flex items-center space-x-2 text-red-600">
+                <Trash2 className="h-4 w-4" />
+                <span>Delete Model</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         );
       },
     }),
@@ -167,7 +183,7 @@ export function ModelsTable({ models, onEdit, onDelete, onManageExpenses, onSimu
 
   return (
     <div className="space-y-4">
-      {/* Search and Paste */}
+      {/* Search, Refresh and Paste */}
       <div className="flex items-center justify-between">
         <Input
           placeholder="Search models..."
@@ -175,17 +191,29 @@ export function ModelsTable({ models, onEdit, onDelete, onManageExpenses, onSimu
           onChange={(e) => setGlobalFilter(e.target.value)}
           className="max-w-sm"
         />
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onPaste}
-          disabled={!canPaste}
-          className="flex items-center space-x-2"
-          title="Paste Model from Clipboard"
-        >
-          <ClipboardPaste className="h-4 w-4" />
-          <span>Paste Model</span>
-        </Button>
+        <div className="flex items-center space-x-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onRefresh}
+            className="flex items-center space-x-2"
+            title="Refresh Models List"
+          >
+            <RefreshCw className="h-4 w-4" />
+            <span>Refresh</span>
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onPaste}
+            disabled={!canPaste}
+            className="flex items-center space-x-2"
+            title="Paste Model from Clipboard"
+          >
+            <ClipboardPaste className="h-4 w-4" />
+            <span>Paste Model</span>
+          </Button>
+        </div>
       </div>
 
       {/* Table */}
@@ -216,7 +244,7 @@ export function ModelsTable({ models, onEdit, onDelete, onManageExpenses, onSimu
                 <TableRow
                   key={row.id}
                   data-state={row.getIsSelected() && 'selected'}
-                  className="hover:bg-gray-50 group"
+                  className="hover:bg-gray-50"
                 >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id}>

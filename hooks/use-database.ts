@@ -183,13 +183,44 @@ export const useModels = () => {
         timestamp: getCurrentTimestamp(),
       };
       
-      // Copy to clipboard
-      await navigator.clipboard.writeText(JSON.stringify(copyData, null, 2));
+      const copyText = JSON.stringify(copyData, null, 2);
       
-      return true;
+      // Check if clipboard API is available
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        try {
+          await navigator.clipboard.writeText(copyText);
+          return { success: true, method: 'clipboard' };
+        } catch (clipboardErr) {
+          // Fallback to document.execCommand if clipboard API fails
+          console.warn('Clipboard API failed, trying fallback method:', clipboardErr);
+        }
+      }
+      
+      // Fallback method using document.execCommand
+      const textArea = document.createElement('textarea');
+      textArea.value = copyText;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-999999px';
+      textArea.style.top = '-999999px';
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      
+      try {
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textArea);
+        
+        if (successful) {
+          return { success: true, method: 'fallback' };
+        } else {
+          throw new Error('Fallback copy method failed');
+        }
+      } catch (fallbackErr) {
+        document.body.removeChild(textArea);
+        throw new Error('Both clipboard methods failed. Please copy manually.');
+      }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to copy model to clipboard';
-      setError(errorMessage);
       throw new Error(errorMessage);
     }
   }, [db]);
@@ -199,13 +230,97 @@ export const useModels = () => {
     try {
       const database = db || await getDatabase();
       
-      // Read from clipboard
-      const clipboardText = await navigator.clipboard.readText();
-      const copyData = JSON.parse(clipboardText);
+      let clipboardText: string;
+      
+      // Check if clipboard API is available
+      if (navigator.clipboard && navigator.clipboard.readText) {
+        try {
+          clipboardText = await navigator.clipboard.readText();
+        } catch (clipboardErr) {
+          throw new Error('Clipboard access denied. Please paste the model data manually.');
+        }
+      } else {
+        throw new Error('Clipboard API not available. Please paste the model data manually.');
+      }
+      
+      if (!clipboardText || clipboardText.trim() === '') {
+        throw new Error('Clipboard is empty or contains no text data.');
+      }
+      
+      let copyData;
+      try {
+        copyData = JSON.parse(clipboardText);
+      } catch (parseErr) {
+        throw new Error('Clipboard does not contain valid JSON data.');
+      }
       
       // Validate clipboard data
       if (copyData.type !== 'reserve-fund-model-copy' || !copyData.model) {
         throw new Error('Clipboard does not contain valid model data');
+      }
+      
+      // Create the new model
+      const timestamp = getCurrentTimestamp();
+      const newModel: Model = {
+        ...copyData.model,
+        id: generateId(),
+        name: `${copyData.model.name}`,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+      
+      // Validate with Zod
+      const validatedModel = ModelSchema.parse(newModel);
+      
+      // Insert the model
+      await database.models.insert(validatedModel);
+      
+      // Create expenses if any
+      if (copyData.expenses && Array.isArray(copyData.expenses)) {
+        for (const expenseData of copyData.expenses) {
+          const newExpense: Expense = {
+            ...expenseData,
+            id: generateId(),
+            modelId: validatedModel.id,
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          };
+          
+          // Validate with Zod
+          const validatedExpense = ExpenseSchema.parse(newExpense);
+          
+          // Insert the expense
+          await database.expenses.insert(validatedExpense);
+        }
+      }
+      
+      await loadModels(); // Refresh the list
+      return validatedModel;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to paste model from clipboard';
+      throw new Error(errorMessage);
+    }
+  }, [db, loadModels]);
+
+  // Paste model from manual input (for when clipboard is blocked)
+  const pasteModelFromData = useCallback(async (data: string) => {
+    try {
+      const database = db || await getDatabase();
+      
+      if (!data || data.trim() === '') {
+        throw new Error('No data provided to paste.');
+      }
+      
+      let copyData;
+      try {
+        copyData = JSON.parse(data);
+      } catch (parseErr) {
+        throw new Error('Invalid JSON data provided.');
+      }
+      
+      // Validate clipboard data
+      if (copyData.type !== 'reserve-fund-model-copy' || !copyData.model) {
+        throw new Error('Data does not contain valid model information');
       }
       
       // Create the new model
@@ -246,8 +361,7 @@ export const useModels = () => {
       await loadModels(); // Refresh the list
       return validatedModel;
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to paste model from clipboard';
-      setError(errorMessage);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to paste model from data';
       throw new Error(errorMessage);
     }
   }, [db, loadModels]);
@@ -263,6 +377,7 @@ export const useModels = () => {
     loadModels,
     copyModelToClipboard,
     pasteModelFromClipboard,
+    pasteModelFromData,
   };
 };
 

@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useModels, useExpenses } from '@/hooks/use-database';
+import { getDatabase, getCurrentTimestamp } from '@/lib/database';
+import { hasShareableModelData } from '@/lib/url-sharing';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -11,14 +13,16 @@ import { ModelsTable } from '@/components/models-table';
 import { AddModelDialog } from '@/components/add-model-dialog';
 import { EditModelDialog } from '@/components/edit-model-dialog';
 import { ManageExpensesDialog } from '@/components/manage-expenses-dialog';
+import { ManualPasteDialog } from '@/components/manual-paste-dialog';
+import { ShareModelDialog } from '@/components/share-model-dialog';
 import { Model } from '@/lib/db-schemas';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 
 export default function HomePage() {
-  const { models, isLoading: modelsLoading, error: modelsError, deleteModel, copyModelToClipboard, pasteModelFromClipboard } = useModels();
-  const { expenses } = useExpenses(); // Get all expenses for stats
+  const { models, isLoading: modelsLoading, error: modelsError, deleteModel, copyModelToClipboard, pasteModelFromClipboard, pasteModelFromData, loadModels } = useModels();
+  const { expenses, loadExpenses } = useExpenses(); // Get all expenses for stats
   const router = useRouter();
   
   const [isAddModelOpen, setIsAddModelOpen] = useState(false);
@@ -26,6 +30,9 @@ export default function HomePage() {
   const [managingExpensesModel, setManagingExpensesModel] = useState<Model | null>(null);
   const [newlyCreatedModelId, setNewlyCreatedModelId] = useState<string | null>(null);
   const [canPaste, setCanPaste] = useState(false);
+  const [isManualPasteOpen, setIsManualPasteOpen] = useState(false);
+  const [copyDataForManual, setCopyDataForManual] = useState<string>('');
+  const [sharingModel, setSharingModel] = useState<Model | null>(null);
 
   // Calculate stats
   const totalModels = models.length;
@@ -37,14 +44,19 @@ export default function HomePage() {
 
   // Check if we can paste from clipboard on load
   useEffect(() => {
-    const checkClipboard = async () => {
+    const checkClipboard = () => {
       try {
+        // Only check if clipboard API is available, don't actually read
         if (navigator.clipboard && navigator.clipboard.readText) {
-          const text = await navigator.clipboard.readText();
-          const data = JSON.parse(text);
-          setCanPaste(data.type === 'reserve-fund-model-copy' && data.model);
+          // Don't actually read the clipboard on load, just enable the paste button
+          // The actual check will happen when user clicks paste
+          setCanPaste(true);
+        } else {
+          setCanPaste(false);
         }
-      } catch {
+      } catch (error) {
+        // Don't show error for clipboard permission issues, just disable paste
+        console.warn('Clipboard API not available:', error);
         setCanPaste(false);
       }
     };
@@ -58,10 +70,18 @@ export default function HomePage() {
     return () => window.removeEventListener('focus', handleFocus);
   }, []);
 
+  // Check for shareable model data in URL and redirect to import page
+  useEffect(() => {
+    if (hasShareableModelData()) {
+      router.push('/import');
+    }
+  }, [router]);
+
   const handleDeleteModel = async (model: Model) => {
     if (confirm(`Are you sure you want to delete "${model.name}"? This will also delete all associated expenses.`)) {
       try {
         await deleteModel(model.id);
+        await loadModels(); // Refresh the list
       } catch (error) {
         console.error('Failed to delete model:', error);
         alert('Failed to delete model. Please try again.');
@@ -81,9 +101,10 @@ export default function HomePage() {
     router.push(`/simulation/${model.id}`);
   };
 
-  const handleModelCreated = (modelId: string) => {
+  const handleModelCreated = async (modelId: string) => {
     setNewlyCreatedModelId(modelId);
     setIsAddModelOpen(false);
+    await loadModels(); // Refresh the list
     // Auto-open expenses dialog for the newly created model
     const newModel = models.find(m => m.id === modelId);
     if (newModel) {
@@ -93,16 +114,57 @@ export default function HomePage() {
 
   const handleCopyModel = async (model: Model) => {
     try {
-      await copyModelToClipboard(model);
+      const result = await copyModelToClipboard(model);
       setCanPaste(true);
-      toast.success(`Model "${model.name}" copied to clipboard`, {
-        description: 'The model and all its expenses have been copied. You can now paste it.',
-      });
+      
+      if (result.method === 'clipboard') {
+        toast.success(`Model "${model.name}" copied to clipboard`, {
+          description: 'The model and all its expenses have been copied. You can now paste it.',
+        });
+      } else {
+        toast.success(`Model "${model.name}" copied to clipboard (fallback method)`, {
+          description: 'The model and all its expenses have been copied using fallback method.',
+        });
+      }
     } catch (error) {
       console.error('Failed to copy model:', error);
-      toast.error('Failed to copy model', {
-        description: error instanceof Error ? error.message : 'An unexpected error occurred',
-      });
+      
+      // If clipboard fails, offer manual copy option
+      try {
+        const database = await getDatabase();
+        const expenseDocs = await database.expenses.find({ selector: { modelId: model.id } }).exec();
+        const expenses = expenseDocs.map(doc => doc.toJSON());
+        
+        const copyData = {
+          model: {
+            ...model,
+            id: undefined,
+            createdAt: undefined,
+            updatedAt: undefined,
+          },
+          expenses: expenses.map(expense => ({
+            ...expense,
+            id: undefined,
+            modelId: undefined,
+            createdAt: undefined,
+            updatedAt: undefined,
+          })),
+          type: 'reserve-fund-model-copy',
+          timestamp: getCurrentTimestamp(),
+        };
+        
+        setCopyDataForManual(JSON.stringify(copyData, null, 2));
+        setIsManualPasteOpen(true);
+        
+        toast.error('Clipboard access blocked', {
+          description: 'Opening manual copy dialog. You can copy the data manually.',
+        });
+      } catch (fallbackErr) {
+        console.error('Fallback copy also failed:', fallbackErr);
+        toast.error('Failed to copy model', {
+          description: 'Both clipboard and manual copy methods failed. Please try again.',
+        });
+      }
     }
   };
 
@@ -113,15 +175,55 @@ export default function HomePage() {
         description: 'The model and all its expenses have been created.',
       });
       
+      await loadModels(); // Refresh the list
       // Auto-open expenses dialog for the pasted model
       setManagingExpensesModel(pastedModel);
       setNewlyCreatedModelId(pastedModel.id);
     } catch (error) {
       console.error('Failed to paste model:', error);
-      toast.error('Failed to paste model', {
-        description: error instanceof Error ? error.message : 'An unexpected error occurred',
-      });
+      
+      // If clipboard paste fails, offer manual paste option
+      if (error instanceof Error && (
+        error.message.includes('Clipboard access denied') ||
+        error.message.includes('Clipboard API not available') ||
+        error.message.includes('Clipboard does not contain valid')
+      )) {
+        setIsManualPasteOpen(true);
+        toast.error('Clipboard access blocked', {
+          description: 'Opening manual paste dialog. You can paste the data manually.',
+        });
+      } else {
+        toast.error('Failed to paste model', {
+          description: error instanceof Error ? error.message : 'An unexpected error occurred',
+        });
+      }
     }
+  };
+
+  const handleManualPaste = async (data: string) => {
+    try {
+      const pastedModel = await pasteModelFromData(data);
+      toast.success(`Model "${pastedModel.name}" pasted successfully`, {
+        description: 'The model and all its expenses have been created.',
+      });
+      
+      await loadModels(); // Refresh the list
+      // Auto-open expenses dialog for the pasted model
+      setManagingExpensesModel(pastedModel);
+      setNewlyCreatedModelId(pastedModel.id);
+    } catch (error) {
+      console.error('Failed to paste model from manual data:', error);
+      throw error; // Re-throw to let the dialog handle the error
+    }
+  };
+
+  const handleShareModel = (model: Model) => {
+    setSharingModel(model);
+  };
+
+  const handleRefresh = async () => {
+    await Promise.all([loadModels(), loadExpenses()]);
+    toast.success('Models list refreshed');
   };
 
   if (modelsLoading) {
@@ -135,7 +237,16 @@ export default function HomePage() {
   if (modelsError) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="text-red-500">Error loading dashboard: {modelsError}</div>
+        <div className="text-red-500">
+          Error loading dashboard: {modelsError}
+          <br />
+          <button 
+            onClick={() => window.location.reload()} 
+            className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+          >
+            Reload Page
+          </button>
+        </div>
       </div>
     );
   }
@@ -252,6 +363,8 @@ export default function HomePage() {
               onSimulate={handleSimulate}
               onCopy={handleCopyModel}
               onPaste={handlePasteModel}
+              onRefresh={handleRefresh}
+              onShare={handleShareModel}
               canPaste={canPaste}
             />
           </CardContent>
@@ -269,7 +382,13 @@ export default function HomePage() {
         <EditModelDialog
           model={editingModel}
           open={!!editingModel}
-          onOpenChange={(open) => !open && setEditingModel(null)}
+          onOpenChange={async (open) => {
+            if (!open) {
+              setEditingModel(null);
+              // Refresh models when dialog closes since the model might have been modified
+              await loadModels();
+            }
+          }}
         />
       )}
 
@@ -277,8 +396,30 @@ export default function HomePage() {
         <ManageExpensesDialog
           model={managingExpensesModel}
           open={!!managingExpensesModel}
-          onOpenChange={(open) => !open && setManagingExpensesModel(null)}
+          onOpenChange={async (open) => {
+            if (!open) {
+              setManagingExpensesModel(null);
+              // Refresh expenses when dialog closes since they might have been modified
+              await loadExpenses();
+            }
+          }}
           isNewModel={managingExpensesModel.id === newlyCreatedModelId}
+        />
+      )}
+
+      <ManualPasteDialog
+        open={isManualPasteOpen}
+        onOpenChange={setIsManualPasteOpen}
+        onPaste={handleManualPaste}
+        copyData={copyDataForManual}
+      />
+
+      {sharingModel && (
+        <ShareModelDialog
+          model={sharingModel}
+          expenses={expenses.filter(e => e.modelId === sharingModel.id)}
+          open={!!sharingModel}
+          onOpenChange={(open) => !open && setSharingModel(null)}
         />
       )}
     </div>
