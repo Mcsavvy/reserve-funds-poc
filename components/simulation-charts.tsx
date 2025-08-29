@@ -11,24 +11,23 @@ interface SimulationChartsProps {
 }
 
 export function SimulationCharts({ projections, housingUnits }: SimulationChartsProps) {
-  // Prepare data for the top stacked bar chart (financial flows)
-  const financialData = useMemo(() => {
+  // Prepare data for the top candlestick chart (closing balance surplus/deficit)
+  const balanceData = useMemo(() => {
     return projections.map(projection => {
-      const collections = projection.collections;
-      const expenses = projection.expenses;
-      const loansTaken = projection.loansTaken || 0;
-      const loanPayments = projection.loanPayments || 0;
-      
-      // Calculate net cash flow
-      const netCashFlow = collections - expenses + loansTaken - loanPayments;
+      const closingBalance = projection.closingBalance;
+      const isSurplus = closingBalance >= 0;
       
       return {
         year: projection.year,
-        collections: collections,
-        expenses: expenses,
-        loansTaken: loansTaken,
-        loanPayments: loanPayments,
-        netCashFlow: netCashFlow,
+        // For candlestick effect: positive values go up, negative values go down
+        surplus: isSurplus ? closingBalance : 0,
+        deficit: !isSurplus ? Math.abs(closingBalance) : 0,
+        closingBalance: closingBalance,
+        // Additional data for tooltip
+        collections: projection.collections,
+        expenses: projection.expenses,
+        loansTaken: projection.loansTaken || 0,
+        loanPayments: projection.loanPayments || 0,
       };
     });
   }, [projections]);
@@ -45,7 +44,7 @@ export function SimulationCharts({ projections, housingUnits }: SimulationCharts
     });
   }, [projections, housingUnits]);
 
-  const CustomTooltip = ({ active, payload, label }: any) => {
+  const BalanceTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       const data = payload[0]?.payload;
       return (
@@ -68,8 +67,8 @@ export function SimulationCharts({ projections, housingUnits }: SimulationCharts
                 Loan Payments: {formatCurrency(data?.loanPayments || 0)}
               </p>
             )}
-            <p className="text-sm text-gray-600 font-medium border-t pt-1">
-              Net Cash Flow: {formatCurrency(data?.netCashFlow || 0)}
+            <p className={`text-sm font-medium border-t pt-1 ${data?.closingBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              Closing Balance: {formatCurrency(data?.closingBalance || 0)}
             </p>
           </div>
         </div>
@@ -98,11 +97,11 @@ export function SimulationCharts({ projections, housingUnits }: SimulationCharts
 
   return (
     <div className="space-y-8">
-      {/* Top Chart - Financial Flows (Stacked Bar Chart) */}
+      {/* Top Chart - Closing Balance Surplus/Deficit (Candlestick Style) */}
       <div className="h-96 p-6 bg-gray-50 rounded-lg border">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart
-            data={financialData}
+            data={balanceData}
             margin={{
               top: 30,
               right: 40,
@@ -121,39 +120,25 @@ export function SimulationCharts({ projections, housingUnits }: SimulationCharts
               tick={{ fontSize: 12, fill: '#6b7280' }}
               axisLine={{ stroke: '#d1d5db' }}
             />
-            <Tooltip content={<CustomTooltip />} />
+            <Tooltip content={<BalanceTooltip />} />
             <Legend 
               verticalAlign="top" 
               height={36}
               wrapperStyle={{ paddingBottom: '20px' }}
             />
-            {/* Collections - Dark Green */}
+            {/* Surplus - Dark Green (positive values extending up) */}
             <Bar 
-              dataKey="collections" 
-              name="Collections" 
+              dataKey="surplus" 
+              name="Surplus" 
               fill="#166534" 
-              stackId="stack"
+              stackId="balance"
             />
-            {/* Loans Taken - Yellow */}
+            {/* Deficit - Dark Red (negative values extending down) */}
             <Bar 
-              dataKey="loansTaken" 
-              name="Loans Taken" 
-              fill="#f59e0b" 
-              stackId="stack"
-            />
-            {/* Expenses - Light Green */}
-            <Bar 
-              dataKey="expenses" 
-              name="Expenses" 
-              fill="#22c55e" 
-              stackId="stack"
-            />
-            {/* Loan Payments - Blue */}
-            <Bar 
-              dataKey="loanPayments" 
-              name="Loan Payments" 
-              fill="#3b82f6" 
-              stackId="stack"
+              dataKey="deficit" 
+              name="Deficit" 
+              fill="#dc2626" 
+              stackId="balance"
             />
           </BarChart>
         </ResponsiveContainer>
