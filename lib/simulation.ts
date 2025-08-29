@@ -248,11 +248,12 @@ export function generateProjections(
     
     // Calculate collections (monthly fees * 12 months * housing units)
     const yearsFromBase = year - params.fiscalYear;
-    const inflatedMonthlyFee = calculateInflatedCost(
-      params.monthlyReserveFeesPerHousingUnit,
-      params.inflationRate,
-      yearsFromBase
-    );
+    // const inflatedMonthlyFee = calculateInflatedCost(
+    //   params.monthlyReserveFeesPerHousingUnit,
+    //   params.inflationRate,
+    //   yearsFromBase
+    // );
+    const inflatedMonthlyFee = params.monthlyReserveFeesPerHousingUnit
     const collections = inflatedMonthlyFee * 12 * (params.housingUnits || 0);
     
     // Calculate safety net (percentage of out-of-pocket expenses only)
