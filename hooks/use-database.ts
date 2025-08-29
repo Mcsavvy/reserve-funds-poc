@@ -264,7 +264,7 @@ export const useModels = () => {
       const newModel: Model = {
         ...copyData.model,
         id: generateId(),
-        name: `${copyData.model.name}`,
+        name: `${copyData.model.name} (Copy)`,
         createdAt: timestamp,
         updatedAt: timestamp,
       };
