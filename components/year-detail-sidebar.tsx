@@ -242,6 +242,18 @@ export function YearDetailSidebar({
                     -{formatCurrency(adjustedProjection.loanPayments || 0)}
                   </span>
                 </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-muted-foreground">Projected Net Earnings</span>
+                  <span className="font-medium text-emerald-600">
+                    +{formatCurrency(adjustedProjection.openingBalance * model.bankInterestRate / 100)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-muted-foreground">Loss in Purchase Power</span>
+                  <span className="font-medium text-amber-600">
+                    -{formatCurrency(adjustedProjection.openingBalance * model.inflationRate / 100)}
+                  </span>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -441,6 +453,67 @@ export function YearDetailSidebar({
                 <p className="text-sm text-muted-foreground">Safety Net Amount</p>
                 <p className="text-xl font-bold text-orange-600">
                   {formatCurrency(adjustedProjection.safetyNet)}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Financial Insights */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center space-x-2">
+                <PiggyBank className="h-5 w-5 text-emerald-600" />
+                <span>Financial Insights</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <p className="text-muted-foreground">Bank Interest Rate</p>
+                  <p className="font-medium">{model.bankInterestRate}%</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Inflation Rate</p>
+                  <p className="font-medium">{model.inflationRate}%</p>
+                </div>
+              </div>
+              <Separator />
+              <div className="space-y-3">
+                <div className="text-center bg-emerald-50 rounded-lg p-3">
+                  <p className="text-sm text-muted-foreground">Projected Net Earnings</p>
+                  <p className="text-xl font-bold text-emerald-600">
+                    +{formatCurrency(adjustedProjection.openingBalance * model.bankInterestRate / 100)}
+                  </p>
+                  <p className="text-xs text-emerald-600 mt-1">
+                    Potential interest income on opening balance
+                  </p>
+                </div>
+                <div className="text-center bg-amber-50 rounded-lg p-3">
+                  <p className="text-sm text-muted-foreground">Loss in Purchase Power</p>
+                  <p className="text-xl font-bold text-amber-600">
+                    -{formatCurrency(adjustedProjection.openingBalance * model.inflationRate / 100)}
+                  </p>
+                  <p className="text-xs text-amber-600 mt-1">
+                    Value lost due to inflation
+                  </p>
+                </div>
+              </div>
+              <Separator />
+              <div className="text-center">
+                <p className="text-sm text-muted-foreground">Net Financial Impact</p>
+                <p className={`text-lg font-bold ${
+                  (adjustedProjection.openingBalance * model.bankInterestRate / 100) - 
+                  (adjustedProjection.openingBalance * model.inflationRate / 100) >= 0 
+                    ? 'text-green-600' 
+                    : 'text-red-600'
+                }`}>
+                  {formatCurrency(
+                    (adjustedProjection.openingBalance * model.bankInterestRate / 100) - 
+                    (adjustedProjection.openingBalance * model.inflationRate / 100)
+                  )}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Earnings minus inflation loss
                 </p>
               </div>
             </CardContent>

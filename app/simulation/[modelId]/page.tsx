@@ -419,6 +419,7 @@ export default function SimulationPage() {
                 <ProjectionTable
                   projections={projections}
                   onYearClick={setSelectedYear}
+                  model={model}
                 />
               </CardContent>
             </Card>

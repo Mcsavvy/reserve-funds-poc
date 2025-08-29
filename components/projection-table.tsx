@@ -21,19 +21,21 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { formatCurrency } from '@/lib/db-utils';
 import { YearProjection } from '@/lib/simulation';
+import { Model } from '@/lib/db-schemas';
 import { cn } from '@/lib/utils';
 import { Copy, Download } from 'lucide-react';
 
 interface ProjectionTableProps {
   projections: YearProjection[];
   onYearClick: (year: YearProjection) => void;
+  model: Model | null;
 }
 
 const columnHelper = createColumnHelper<YearProjection>();
 
 // Utility function to convert projections to CSV format
-function projectionsToCSV(projections: YearProjection[]): string {
-  const headers = ['Year', 'Opening Balance', 'Collections', 'Expenses', 'Safety Net', 'Loans Taken', 'Loan Payments', 'Closing Balance'];
+function projectionsToCSV(projections: YearProjection[], model: Model | null): string {
+  const headers = ['Year', 'Opening Balance', 'Collections', 'Expenses', 'Safety Net', 'Loans Taken', 'Loan Payments', 'Projected Net Earnings', 'Loss in Purchase Power', 'Closing Balance'];
   const rows = projections.map(p => [
     p.year,
     p.openingBalance,
@@ -42,6 +44,8 @@ function projectionsToCSV(projections: YearProjection[]): string {
     p.safetyNet,
     p.loansTaken || 0,
     p.loanPayments || 0,
+    model ? (p.openingBalance * model.bankInterestRate / 100) : 0,
+    model ? (p.openingBalance * model.inflationRate / 100) : 0,
     p.closingBalance
   ]);
   
@@ -53,8 +57,8 @@ function projectionsToCSV(projections: YearProjection[]): string {
 }
 
 // Utility function to copy table data to clipboard
-async function copyTableToClipboard(projections: YearProjection[]): Promise<void> {
-  const headers = ['Year', 'Opening Balance', 'Collections', 'Expenses', 'Safety Net', 'Loans Taken', 'Loan Payments', 'Closing Balance'];
+async function copyTableToClipboard(projections: YearProjection[], model: Model | null): Promise<void> {
+  const headers = ['Year', 'Opening Balance', 'Collections', 'Expenses', 'Safety Net', 'Loans Taken', 'Loan Payments', 'Projected Net Earnings', 'Loss in Purchase Power', 'Closing Balance'];
   const rows = projections.map(p => [
     p.year,
     formatCurrency(p.openingBalance),
@@ -63,6 +67,8 @@ async function copyTableToClipboard(projections: YearProjection[]): Promise<void
     formatCurrency(p.safetyNet),
     formatCurrency(p.loansTaken || 0),
     formatCurrency(p.loanPayments || 0),
+    formatCurrency(model ? (p.openingBalance * model.bankInterestRate / 100) : 0),
+    formatCurrency(model ? (p.openingBalance * model.inflationRate / 100) : 0),
     formatCurrency(p.closingBalance)
   ]);
   
@@ -83,7 +89,7 @@ async function copyTableToClipboard(projections: YearProjection[]): Promise<void
   }
 }
 
-export function ProjectionTable({ projections, onYearClick }: ProjectionTableProps) {
+export function ProjectionTable({ projections, onYearClick, model }: ProjectionTableProps) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [isCopying, setIsCopying] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -91,7 +97,7 @@ export function ProjectionTable({ projections, onYearClick }: ProjectionTablePro
   const handleCopy = async () => {
     setIsCopying(true);
     try {
-      await copyTableToClipboard(projections);
+      await copyTableToClipboard(projections, model);
     } catch (error) {
       console.error('Failed to copy to clipboard:', error);
     } finally {
@@ -102,7 +108,7 @@ export function ProjectionTable({ projections, onYearClick }: ProjectionTablePro
   const handleExportCSV = () => {
     setIsExporting(true);
     try {
-      const csvContent = projectionsToCSV(projections);
+      const csvContent = projectionsToCSV(projections, model);
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
       const url = URL.createObjectURL(blob);
@@ -220,6 +226,34 @@ export function ProjectionTable({ projections, onYearClick }: ProjectionTablePro
         );
       },
     }),
+    // New column: Projected Net Earnings
+    columnHelper.display({
+      id: 'projectedNetEarnings',
+      header: 'Projected Net Earnings',
+      cell: (info) => {
+        const openingBalance = info.row.original.openingBalance;
+        const projectedEarnings = model ? (openingBalance * model.bankInterestRate / 100) : 0;
+        return (
+          <div className="text-emerald-600 font-medium">
+            {formatCurrency(projectedEarnings)}
+          </div>
+        );
+      },
+    }),
+    // New column: Loss in Purchase Power
+    columnHelper.display({
+      id: 'lossInPurchasePower',
+      header: 'Loss in Purchase Power',
+      cell: (info) => {
+        const openingBalance = info.row.original.openingBalance;
+        const lossInPurchasePower = model ? (openingBalance * model.inflationRate / 100) : 0;
+        return (
+          <div className="text-amber-600 font-medium">
+            {formatCurrency(lossInPurchasePower)}
+          </div>
+        );
+      },
+    }),
     columnHelper.accessor('closingBalance', {
       header: 'Closing Balance',
       cell: (info) => {
@@ -265,7 +299,7 @@ export function ProjectionTable({ projections, onYearClick }: ProjectionTablePro
   return (
     <div className="relative rounded-md border">
       {/* Floating Action Buttons */}
-      <div className="absolute top-2 right-2 flex gap-2 z-10">
+      <div className="absolute -top-10 right-2 flex gap-2 z-10">
         <Button
           variant="outline"
           size="sm"
@@ -288,7 +322,8 @@ export function ProjectionTable({ projections, onYearClick }: ProjectionTablePro
         </Button>
       </div>
       
-      <Table>
+      <div className="overflow-x-auto">
+        <Table>
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id}>
@@ -348,6 +383,7 @@ export function ProjectionTable({ projections, onYearClick }: ProjectionTablePro
           )}
         </TableBody>
       </Table>
+      </div>
     </div>
   );
 }
