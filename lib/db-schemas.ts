@@ -44,9 +44,25 @@ export const ExpenseSchema = z.object({
     path: ['cost'],
   });
 
+// Zod schema for Investments
+export const InvestmentSchema = z.object({
+  id: z.string().max(100, 'ID must be 100 characters or less'),
+  modelId: z.string().max(100, 'Model ID must be 100 characters or less'), // Reference to the Model
+  investmentType: z.enum(['CD', 'T-Bonds']),
+  strategyName: z.string().max(200, 'Strategy name must be 200 characters or less').optional(),
+  amountInvested: z.number().min(0, 'Amount invested must be non-negative'),
+  yearStarted: z.number().min(1900, 'Invalid year started').max(2200, 'Year started must be before 2200'),
+  annualInterestRate: z.number().min(0, 'Annual interest rate must be non-negative').max(100, 'Annual interest rate must be less than 100'),
+  terms: z.number().min(1, 'Terms must be at least 1 year').max(50, 'Terms must be 50 years or less'),
+  note: z.string().max(500, 'Note must be 500 characters or less').optional(),
+  createdAt: z.string().max(50, 'Created date must be 50 characters or less'),
+  updatedAt: z.string().max(50, 'Updated date must be 50 characters or less'),
+});
+
 // TypeScript types derived from Zod schemas
 export type Model = z.infer<typeof ModelSchema>;
 export type Expense = z.infer<typeof ExpenseSchema>;
+export type Investment = z.infer<typeof InvestmentSchema>;
 
 // RxDB schema for Model collection
 export const modelRxSchema: RxJsonSchema<Model> = {
@@ -224,4 +240,78 @@ export const expenseRxSchema: RxJsonSchema<Expense> = {
     'updatedAt',
   ],
   indexes: ['modelId', 'name', 'sirs', 'createdAt'],
+};
+
+// RxDB schema for Investment collection
+export const investmentRxSchema: RxJsonSchema<Investment> = {
+  version: 0,
+  primaryKey: 'id',
+  type: 'object',
+  properties: {
+    id: {
+      type: 'string',
+      maxLength: 100,
+    },
+    modelId: {
+      type: 'string',
+      ref: 'models', // Reference to models collection
+      maxLength: 100,
+    },
+    investmentType: {
+      type: 'string',
+      enum: ['CD', 'T-Bonds'],
+      maxLength: 10
+    },
+    strategyName: {
+      type: 'string',
+      maxLength: 200,
+    },
+    amountInvested: {
+      type: 'number',
+      minimum: 0,
+    },
+    yearStarted: {
+      type: 'number',
+      minimum: 1900,
+      maximum: 2200,
+      multipleOf: 1,
+    },
+    annualInterestRate: {
+      type: 'number',
+      minimum: 0,
+      maximum: 100,
+    },
+    terms: {
+      type: 'number',
+      minimum: 1,
+      maximum: 50,
+      multipleOf: 1,
+    },
+    note: {
+      type: 'string',
+      maxLength: 500,
+    },
+    createdAt: {
+      type: 'string',
+      format: 'date-time',
+      maxLength: 50,
+    },
+    updatedAt: {
+      type: 'string',
+      format: 'date-time',
+      maxLength: 50,
+    },
+  },
+  required: [
+    'id',
+    'modelId',
+    'investmentType',
+    'amountInvested',
+    'yearStarted',
+    'annualInterestRate',
+    'terms',
+    'createdAt',
+    'updatedAt',
+  ],
+  indexes: ['modelId', 'investmentType', 'yearStarted', 'createdAt'],
 };

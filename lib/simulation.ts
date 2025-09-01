@@ -1,4 +1,4 @@
-import { Model, Expense } from './db-schemas';
+import { Model, Expense, Investment } from './db-schemas';
 import { formatCurrency } from './db-utils';
 
 export interface YearProjection {
@@ -9,9 +9,28 @@ export interface YearProjection {
   safetyNet: number;
   loansTaken: number;
   loanPayments: number;
+  investmentLiquidations: number;
   closingBalance: number;
   expenseDetails: ExpenseOccurrence[];
   loanDetails: LoanDetail[];
+  investmentDetails: InvestmentLiquidation[];
+  simulationInvestmentDetails?: {
+    ongoingInvestments: Array<{
+      investment: any; // SimulationInvestment type
+      startYear: number;
+      currentValue: number;
+      isLiquidated: boolean;
+      liquidationYear?: number;
+    }>;
+    liquidatedInvestments: Array<{
+      investment: any; // SimulationInvestment type
+      startYear: number;
+      currentValue: number;
+      isLiquidated: boolean;
+      liquidationYear?: number;
+    }>;
+    totalInterest: number;
+  };
 }
 
 export interface ExpenseOccurrence {
@@ -28,6 +47,14 @@ export interface LoanDetail {
   payment: number;
   interest: number;
   principal: number;
+}
+
+export interface InvestmentLiquidation {
+  investment: Investment;
+  originalAmount: number;
+  liquidatedAmount: number;
+  interestEarned: number;
+  yearsHeld: number;
 }
 
 export interface SimulationParams extends Omit<Model, 'id' | 'createdAt' | 'updatedAt'> {
@@ -129,6 +156,37 @@ export function doesExpenseOccurInYear(
 }
 
 /**
+ * Determine if an investment is liquidated in a given year
+ */
+export function isInvestmentLiquidatedInYear(
+  investment: Investment,
+  year: number
+): boolean {
+  // Investment is liquidated when it reaches maturity (year started + terms)
+  return year === investment.yearStarted + investment.terms;
+}
+
+/**
+ * Calculate the liquidated amount for an investment
+ */
+export function calculateInvestmentLiquidation(
+  investment: Investment,
+  year: number
+): InvestmentLiquidation {
+  const yearsHeld = year - investment.yearStarted;
+  const interestEarned = investment.amountInvested * (investment.annualInterestRate / 100) * yearsHeld;
+  const liquidatedAmount = investment.amountInvested + interestEarned;
+  
+  return {
+    investment,
+    originalAmount: investment.amountInvested,
+    liquidatedAmount,
+    interestEarned,
+    yearsHeld,
+  };
+}
+
+/**
  * Calculate expenses for a specific year
  */
 export function calculateYearExpenses(
@@ -167,11 +225,31 @@ export function calculateYearExpenses(
 }
 
 /**
+ * Calculate investment liquidations for a specific year
+ */
+export function calculateYearInvestmentLiquidations(
+  investments: Investment[],
+  year: number
+): InvestmentLiquidation[] {
+  const yearLiquidations: InvestmentLiquidation[] = [];
+  
+  for (const investment of investments) {
+    if (isInvestmentLiquidatedInYear(investment, year)) {
+      const liquidation = calculateInvestmentLiquidation(investment, year);
+      yearLiquidations.push(liquidation);
+    }
+  }
+  
+  return yearLiquidations;
+}
+
+/**
  * Generate year-by-year projections for a model
  */
 export function generateProjections(
   params: SimulationParams,
-  expenses: Expense[]
+  expenses: Expense[],
+  investments: Investment[] = []
 ): YearProjection[] {
   const projections: YearProjection[] = [];
   let currentBalance = params.startingAmount;
@@ -186,12 +264,16 @@ export function generateProjections(
   
   for (let year = params.fiscalYear; year < params.fiscalYear + params.period; year++) {
     const expenseDetails = calculateYearExpenses(expenses, year, params.fiscalYear, params);
+    const investmentDetails = calculateYearInvestmentLiquidations(investments, year);
     
     // Calculate total out-of-pocket expenses (excluding loan portions)
     const totalOutOfPocketExpenses = expenseDetails.reduce((sum, detail) => sum + detail.outOfPocketAmount, 0);
     
     // Calculate total loans taken this year
     const totalLoansTaken = expenseDetails.reduce((sum, detail) => sum + detail.loanAmount, 0);
+    
+    // Calculate total investment liquidations this year
+    const totalInvestmentLiquidations = investmentDetails.reduce((sum, detail) => sum + detail.liquidatedAmount, 0);
     
     // Add new loans to active loans tracking
     if (totalLoansTaken > 0) {
@@ -260,8 +342,8 @@ export function generateProjections(
     const safetyNet = totalOutOfPocketExpenses * (params.safetyNetPercentage / 100);
     
     // Calculate closing balance
-    // Balance = Opening + Collections + Loans Taken - Out-of-pocket Expenses - Safety Net - Loan Payments
-    const closingBalance = currentBalance + collections + totalLoansTaken - totalOutOfPocketExpenses - safetyNet - totalLoanPayments;
+    // Balance = Opening + Collections + Loans Taken + Investment Liquidations - Out-of-pocket Expenses - Safety Net - Loan Payments
+    const closingBalance = currentBalance + collections + totalLoansTaken + totalInvestmentLiquidations - totalOutOfPocketExpenses - safetyNet - totalLoanPayments;
     
     projections.push({
       year,
@@ -271,9 +353,11 @@ export function generateProjections(
       safetyNet,
       loansTaken: totalLoansTaken,
       loanPayments: totalLoanPayments,
+      investmentLiquidations: totalInvestmentLiquidations,
       closingBalance,
       expenseDetails,
       loanDetails: currentYearLoanDetails,
+      investmentDetails,
     });
     
     // Update current balance for next year
@@ -295,6 +379,7 @@ export function applyYearAdjustments(
     safetyNet?: number;
     loansTaken?: number;
     loanPayments?: number;
+    investmentLiquidations?: number;
   }>
 ): YearProjection[] {
   const adjustedProjections = [...projections];
@@ -318,13 +403,15 @@ export function applyYearAdjustments(
       safetyNet: adjustment.safetyNet ?? projection.safetyNet,
       loansTaken: adjustment.loansTaken ?? projection.loansTaken,
       loanPayments: adjustment.loanPayments ?? projection.loanPayments,
+      investmentLiquidations: adjustment.investmentLiquidations ?? projection.investmentLiquidations,
     };
     
-    // Recalculate closing balance with loan components
+    // Recalculate closing balance with all components
     adjustedProjection.closingBalance = 
       adjustedProjection.openingBalance + 
       adjustedProjection.collections + 
-      adjustedProjection.loansTaken - 
+      adjustedProjection.loansTaken + 
+      adjustedProjection.investmentLiquidations - 
       adjustedProjection.expenses - 
       adjustedProjection.safetyNet - 
       adjustedProjection.loanPayments;
@@ -339,7 +426,8 @@ export function applyYearAdjustments(
         openingBalance: prevClosingBalance,
         closingBalance: prevClosingBalance + 
           adjustedProjections[i].collections + 
-          adjustedProjections[i].loansTaken - 
+          adjustedProjections[i].loansTaken + 
+          adjustedProjections[i].investmentLiquidations - 
           adjustedProjections[i].expenses - 
           adjustedProjections[i].safetyNet - 
           adjustedProjections[i].loanPayments
@@ -633,6 +721,7 @@ export function getProjectionStats(projections: YearProjection[]) {
   const totalExpenses = projections.reduce((sum, p) => sum + p.expenses, 0);
   const totalLoansTaken = projections.reduce((sum, p) => sum + (p.loansTaken || 0), 0);
   const totalLoanPayments = projections.reduce((sum, p) => sum + (p.loanPayments || 0), 0);
+  const totalInvestmentLiquidations = projections.reduce((sum, p) => sum + (p.investmentLiquidations || 0), 0);
   const negativeBalanceYears = projections.filter(p => p.closingBalance < 0).length;
   
   return {
@@ -643,6 +732,7 @@ export function getProjectionStats(projections: YearProjection[]) {
     totalExpenses,
     totalLoansTaken,
     totalLoanPayments,
+    totalInvestmentLiquidations,
     negativeBalanceYears,
     averageBalance: projections.reduce((sum, p) => sum + p.closingBalance, 0) / projections.length,
   };

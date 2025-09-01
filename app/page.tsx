@@ -13,6 +13,7 @@ import { ModelsTable } from '@/components/models-table';
 import { AddModelDialog } from '@/components/add-model-dialog';
 import { EditModelDialog } from '@/components/edit-model-dialog';
 import { ManageExpensesDialog } from '@/components/manage-expenses-dialog';
+import { ManageInvestmentsDialog } from '@/components/manage-investments-dialog';
 import { ManualPasteDialog } from '@/components/manual-paste-dialog';
 import { ShareModelDialog } from '@/components/share-model-dialog';
 import { Model } from '@/lib/db-schemas';
@@ -28,6 +29,7 @@ export default function HomePage() {
   const [isAddModelOpen, setIsAddModelOpen] = useState(false);
   const [editingModel, setEditingModel] = useState<Model | null>(null);
   const [managingExpensesModel, setManagingExpensesModel] = useState<Model | null>(null);
+  const [managingInvestmentsModel, setManagingInvestmentsModel] = useState<Model | null>(null);
   const [newlyCreatedModelId, setNewlyCreatedModelId] = useState<string | null>(null);
   const [canPaste, setCanPaste] = useState(false);
   const [isManualPasteOpen, setIsManualPasteOpen] = useState(false);
@@ -47,6 +49,7 @@ export default function HomePage() {
     const checkClipboard = () => {
       try {
         // Only check if clipboard API is available, don't actually read
+        // @ts-ignore
         if (navigator.clipboard && navigator.clipboard.readText) {
           // Don't actually read the clipboard on load, just enable the paste button
           // The actual check will happen when user clicks paste
@@ -95,6 +98,10 @@ export default function HomePage() {
 
   const handleManageExpenses = (model: Model) => {
     setManagingExpensesModel(model);
+  };
+
+  const handleManageInvestments = (model: Model) => {
+    setManagingInvestmentsModel(model);
   };
 
   const handleSimulate = (model: Model) => {
@@ -360,6 +367,7 @@ export default function HomePage() {
               onEdit={handleEditModel}
               onDelete={handleDeleteModel}
               onManageExpenses={handleManageExpenses}
+              onManageInvestments={handleManageInvestments}
               onSimulate={handleSimulate}
               onCopy={handleCopyModel}
               onPaste={handlePasteModel}
@@ -404,6 +412,18 @@ export default function HomePage() {
             }
           }}
           isNewModel={managingExpensesModel.id === newlyCreatedModelId}
+        />
+      )}
+
+      {managingInvestmentsModel && (
+        <ManageInvestmentsDialog
+          model={managingInvestmentsModel}
+          open={!!managingInvestmentsModel}
+          onOpenChange={async (open) => {
+            if (!open) {
+              setManagingInvestmentsModel(null);
+            }
+          }}
         />
       )}
 

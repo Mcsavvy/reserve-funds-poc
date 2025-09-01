@@ -30,7 +30,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Edit, Trash2, Settings, ChevronLeft, ChevronRight, Play, Copy, ClipboardPaste, MoreHorizontal, RefreshCw, Share2 } from 'lucide-react';
+import { Edit, Trash2, Settings, ChevronLeft, ChevronRight, Play, Copy, ClipboardPaste, MoreHorizontal, RefreshCw, Share2, TrendingUp } from 'lucide-react';
 import { formatCurrency, formatPercentage } from '@/lib/db-utils';
 import { Model } from '@/lib/db-schemas';
 
@@ -39,6 +39,7 @@ interface ModelsTableProps {
   onEdit: (model: Model) => void;
   onDelete: (model: Model) => void;
   onManageExpenses: (model: Model) => void;
+  onManageInvestments: (model: Model) => void;
   onSimulate: (model: Model) => void;
   onCopy: (model: Model) => void;
   onPaste: () => void;
@@ -49,7 +50,7 @@ interface ModelsTableProps {
 
 const columnHelper = createColumnHelper<Model>();
 
-export function ModelsTable({ models, onEdit, onDelete, onManageExpenses, onSimulate, onCopy, onPaste, onRefresh, onShare, canPaste = false }: ModelsTableProps) {
+export function ModelsTable({ models, onEdit, onDelete, onManageExpenses, onManageInvestments, onSimulate, onCopy, onPaste, onRefresh, onShare, canPaste = false }: ModelsTableProps) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [globalFilter, setGlobalFilter] = useState('');
@@ -142,6 +143,10 @@ export function ModelsTable({ models, onEdit, onDelete, onManageExpenses, onSimu
               <DropdownMenuItem onClick={() => onManageExpenses(model)} className="flex items-center space-x-2">
                 <Settings className="h-4 w-4" />
                 <span>Manage Expenses</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onManageInvestments(model)} className="flex items-center space-x-2">
+                <TrendingUp className="h-4 w-4" />
+                <span>Manage Investments</span>
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => onEdit(model)} className="flex items-center space-x-2">
                 <Edit className="h-4 w-4" />

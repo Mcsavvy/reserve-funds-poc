@@ -13,8 +13,10 @@ import { wrappedValidateZSchemaStorage } from 'rxdb/plugins/validate-z-schema';
 import { 
   Model, 
   Expense, 
+  Investment,
   modelRxSchema, 
-  expenseRxSchema 
+  expenseRxSchema,
+  investmentRxSchema
 } from './db-schemas';
 
 // Add RxDB plugins
@@ -25,11 +27,13 @@ addRxPlugin(RxDBUpdatePlugin);
 // Collection types
 export type ModelCollection = RxCollection<Model>;
 export type ExpenseCollection = RxCollection<Expense>;
+export type InvestmentCollection = RxCollection<Investment>;
 
 // Database collections interface
 export interface DatabaseCollections {
   models: ModelCollection;
   expenses: ExpenseCollection;
+  investments: InvestmentCollection;
 }
 
 // Database type
@@ -91,6 +95,9 @@ export const createDatabase = async (): Promise<ReserveFundsDatabase> => {
     },
     expenses: {
       schema: expenseRxSchema,
+    },
+    investments: {
+      schema: investmentRxSchema,
     },
   });
 

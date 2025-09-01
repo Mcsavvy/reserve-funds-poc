@@ -5,7 +5,7 @@ import {
   generateId, 
   getCurrentTimestamp 
 } from '@/lib/database';
-import { Model, Expense, ModelSchema, ExpenseSchema } from '@/lib/db-schemas';
+import { Model, Expense, Investment, ModelSchema, ExpenseSchema, InvestmentSchema } from '@/lib/db-schemas';
 
 /**
  * Hook to get the database instance
@@ -124,8 +124,9 @@ export const useModels = () => {
       const doc = await database.models.findOne(id).exec();
       if (!doc) throw new Error('Model not found');
 
-      // Also delete associated expenses
+      // Also delete associated expenses and investments
       await database.expenses.find({ selector: { modelId: id } }).remove();
+      await database.investments.find({ selector: { modelId: id } }).remove();
       
       await doc.remove();
       await loadModels(); // Refresh the list
@@ -158,9 +159,12 @@ export const useModels = () => {
     try {
       const database = db || await getDatabase();
       
-      // Get all expenses for this model
+      // Get all expenses and investments for this model
       const expenseDocs = await database.expenses.find({ selector: { modelId: model.id } }).exec();
       const expenses = expenseDocs.map(doc => doc.toJSON());
+      
+      const investmentDocs = await database.investments.find({ selector: { modelId: model.id } }).exec();
+      const investments = investmentDocs.map(doc => doc.toJSON());
       
       // Create copy data structure
       const copyData = {
@@ -173,6 +177,14 @@ export const useModels = () => {
         },
         expenses: expenses.map(expense => ({
           ...expense,
+          // Remove id, modelId, createdAt, updatedAt as these will be regenerated
+          id: undefined,
+          modelId: undefined,
+          createdAt: undefined,
+          updatedAt: undefined,
+        })),
+        investments: investments.map(investment => ({
+          ...investment,
           // Remove id, modelId, createdAt, updatedAt as these will be regenerated
           id: undefined,
           modelId: undefined,
@@ -509,5 +521,136 @@ export const useExpenses = (modelId?: string) => {
     deleteExpense,
     getExpense,
     loadExpenses,
+  };
+};
+
+/**
+ * Hook for Investment collection operations
+ */
+export const useInvestments = (modelId?: string) => {
+  const { db } = useDatabase();
+  const [investments, setInvestments] = useState<Investment[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Load investments (all or by model)
+  const loadInvestments = useCallback(async () => {
+    if (!db) return;
+    
+    try {
+      setIsLoading(true);
+      const query = modelId 
+        ? db.investments.find({ selector: { modelId } })
+        : db.investments.find();
+      
+      const result = await query.exec();
+      setInvestments(result.map(doc => doc.toJSON()));
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load investments');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [db, modelId]);
+
+  // Create a new investment
+  const createInvestment = useCallback(async (investmentData: Omit<Investment, 'id' | 'createdAt' | 'updatedAt'>) => {
+    const database = db || await getDatabase();
+
+    try {
+      const timestamp = getCurrentTimestamp();
+      const newInvestment: Investment = {
+        ...investmentData,
+        id: generateId(),
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+
+      // Validate with Zod
+      const validated = InvestmentSchema.parse(newInvestment);
+      
+      await database.investments.insert(validated);
+      await loadInvestments(); // Refresh the list
+      return validated;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to create investment';
+      setError(errorMessage);
+      throw new Error(errorMessage);
+    }
+  }, [db, loadInvestments]);
+
+  // Update an investment
+  const updateInvestment = useCallback(async (id: string, updates: Partial<Omit<Investment, 'id' | 'createdAt'>>) => {
+    const database = db || await getDatabase();
+
+    try {
+      const doc = await database.investments.findOne(id).exec();
+      if (!doc) throw new Error('Investment not found');
+
+      const updatedInvestment: Investment = {
+        ...doc.toJSON(),
+        ...updates,
+        updatedAt: getCurrentTimestamp(),
+      };
+
+      // Validate with Zod
+      const validated = InvestmentSchema.parse(updatedInvestment);
+      
+      await doc.update({
+        $set: validated
+      });
+      
+      await loadInvestments(); // Refresh the list
+      return validated;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to update investment';
+      setError(errorMessage);
+      throw new Error(errorMessage);
+    }
+  }, [db, loadInvestments]);
+
+  // Delete an investment
+  const deleteInvestment = useCallback(async (id: string) => {
+    const database = db || await getDatabase();
+
+    try {
+      const doc = await database.investments.findOne(id).exec();
+      if (!doc) throw new Error('Investment not found');
+      
+      await doc.remove();
+      await loadInvestments(); // Refresh the list
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to delete investment';
+      setError(errorMessage);
+      throw new Error(errorMessage);
+    }
+  }, [db, loadInvestments]);
+
+  // Get a single investment by ID
+  const getInvestment = useCallback(async (id: string): Promise<Investment | null> => {
+    const database = db || await getDatabase();
+
+    try {
+      const doc = await database.investments.findOne(id).exec();
+      return doc ? doc.toJSON() : null;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to get investment');
+      return null;
+    }
+  }, [db]);
+
+  useEffect(() => {
+    loadInvestments();
+  }, [loadInvestments]);
+
+  return {
+    investments,
+    isLoading,
+    error,
+    createInvestment,
+    updateInvestment,
+    deleteInvestment,
+    getInvestment,
+    loadInvestments,
   };
 };
