@@ -52,7 +52,7 @@ function projectionsToCSV(projections: YearProjection[], model: Model | null, si
       p.loanPayments || 0,
       availableToInvest,
       totalInvested,
-      p.investmentLiquidations || 0,
+      p.investmentLiquidations.reduce((sum, liquidation) => sum + liquidation.liquidatedAmount, 0),
       model ? (p.openingBalance * model.bankInterestRate / 100) : 0,
       model ? (p.openingBalance * model.inflationRate / 100) : 0,
       p.closingBalance
@@ -84,7 +84,7 @@ async function copyTableToClipboard(projections: YearProjection[], model: Model 
       formatCurrency(p.loanPayments || 0),
       formatCurrency(availableToInvest),
       formatCurrency(totalInvested),
-      formatCurrency(p.investmentLiquidations || 0),
+      formatCurrency(p.investmentLiquidations.reduce((sum, liquidation) => sum + liquidation.liquidatedAmount, 0)),
       formatCurrency(model ? (p.openingBalance * model.bankInterestRate / 100) : 0),
       formatCurrency(model ? (p.openingBalance * model.inflationRate / 100) : 0),
       formatCurrency(p.closingBalance)
@@ -304,18 +304,18 @@ export function ProjectionTable({ projections, onYearClick, model, simulationInv
     columnHelper.accessor('investmentLiquidations', {
       header: 'Investment Liquidations',
       cell: (info) => {
-        const value = info.getValue() || 0;
+        const value = info.getValue() || [];
         const investmentCount = info.row.original.investmentDetails?.length || 0;
         
         return (
           <div className="space-y-1">
             <div className={cn(
               "font-medium",
-              value > 0 ? "text-green-600" : "text-gray-500"
+              value.length > 0 ? "text-green-600" : "text-gray-500"
             )}>
-              {formatCurrency(value)}
+              {formatCurrency(value.reduce((sum, liquidation) => sum + liquidation.liquidatedAmount, 0))}
             </div>
-            {value > 0 && (
+            {value.length > 0 && (
               <Badge variant="outline" className="text-xs text-green-600 border-green-600">
                 {investmentCount > 0 ? `${investmentCount} matured` : 'Liquidated'}
               </Badge>
@@ -450,7 +450,7 @@ export function ProjectionTable({ projections, onYearClick, model, simulationInv
               const hasExpenses = projection.expenseDetails.length > 0;
               const hasLoans = (projection.loansTaken || 0) > 0 || (projection.loanPayments || 0) > 0;
               const hasInvestments = (simulationInvestments?.[projection.year]?.length || 0) > 0;
-              const hasLiquidations = (projection.investmentLiquidations || 0) > 0;
+              const hasLiquidations = (projection.investmentLiquidations.length || 0) > 0;
               
               return (
                 <TableRow

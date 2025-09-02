@@ -166,7 +166,7 @@ export function YearDetailSidebar({
             />
 
             {/* No Investments Message */}
-            {(!adjustedProjection.investmentLiquidations || adjustedProjection.investmentLiquidations === 0) && 
+            {(!adjustedProjection.investmentLiquidations || adjustedProjection.investmentLiquidations.length === 0) && 
              (!adjustedProjection.simulationInvestmentDetails?.ongoingInvestments || 
               adjustedProjection.simulationInvestmentDetails.ongoingInvestments.length === 0) && (
               <Card>

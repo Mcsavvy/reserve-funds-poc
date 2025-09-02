@@ -38,7 +38,9 @@ export function InvestmentSummaryCard({ adjustedProjection, onAddInvestment }: I
           <div>
             <p className="text-muted-foreground">Total Liquidations</p>
             <p className="font-bold text-green-600">
-              {formatCurrency(adjustedProjection.investmentLiquidations || 0)}
+              {formatCurrency(
+                adjustedProjection.investmentLiquidations?.reduce((sum, liquidation) => sum + liquidation.liquidatedAmount, 0) || 0
+              )}
             </p>
           </div>
           <div>
