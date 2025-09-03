@@ -1,15 +1,15 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Edit, Zap } from 'lucide-react';
+import { Edit, Zap } from 'lucide-react';
 import { Model } from '@/lib/db-schemas';
-import { SimulationParams } from '@/lib/simulation';
+import Link from 'next/link';
+import Image from 'next/image';
 
 interface SimulationHeaderProps {
   model: Model;
   hasUnsavedChanges: boolean;
   isOptimizing: boolean;
-  onBack: () => void;
   onResetChanges: () => void;
   onSaveModel: () => void;
   onOptimizeFees: () => void;
@@ -20,7 +20,6 @@ export function SimulationHeader({
   model,
   hasUnsavedChanges,
   isOptimizing,
-  onBack,
   onResetChanges,
   onSaveModel,
   onOptimizeFees,
@@ -31,15 +30,15 @@ export function SimulationHeader({
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center space-x-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onBack}
-              className="flex items-center space-x-2"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              <span>Back</span>
-            </Button>
+            <Link href="/">
+              <Image
+                src="/logo.png"
+                alt="Reserve Fund Advisers LLC"
+                width={75}
+                height={48}
+                className="h-12 w-auto"
+              />
+            </Link>
             <div>
               <h1 className="text-xl font-bold text-gray-900">Simulation: {model.name}</h1>
               <p className="text-sm text-gray-500">
