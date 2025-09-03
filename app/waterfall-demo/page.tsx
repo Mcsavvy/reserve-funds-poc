@@ -69,7 +69,7 @@ export default function WaterfallDemoPage() {
             data={sampleData}
             height={400}
             formatValue={currencyFormatter}
-            showYearGrid={true}
+            showYearGrid={false}
           />
           <div className="mt-4 text-sm text-gray-500 text-center">
             Green bars: Positive values (surplus), Red bars: Negative values (deficit)
