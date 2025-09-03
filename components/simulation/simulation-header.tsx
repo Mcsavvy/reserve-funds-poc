@@ -1,29 +1,36 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { Edit, Zap } from 'lucide-react';
+import { Edit, Zap, Save } from 'lucide-react';
 import { Model } from '@/lib/db-schemas';
 import Link from 'next/link';
 import Image from 'next/image';
+import { VersionSelector } from '@/components/version-selector';
 
 interface SimulationHeaderProps {
   model: Model;
   hasUnsavedChanges: boolean;
   isOptimizing: boolean;
+  versions: any[];
+  currentVersionId?: string;
   onResetChanges: () => void;
-  onSaveModel: () => void;
   onOptimizeFees: () => void;
-  onEditModel: () => void;
+  onEditSimulation: () => void;
+  onLoadVersion: (version: any) => void;
+  onOpenVersionManagement: () => void;
 }
 
 export function SimulationHeader({
   model,
   hasUnsavedChanges,
   isOptimizing,
+  versions,
+  currentVersionId,
   onResetChanges,
-  onSaveModel,
   onOptimizeFees,
-  onEditModel
+  onEditSimulation,
+  onLoadVersion,
+  onOpenVersionManagement
 }: SimulationHeaderProps) {
   return (
     <header className="bg-white shadow-sm border-b">
@@ -46,14 +53,29 @@ export function SimulationHeader({
               </p>
             </div>
           </div>
+          
+          {/* Version Selector */}
+          <VersionSelector
+            versions={versions}
+            currentVersionId={currentVersionId}
+            onLoadVersion={onLoadVersion}
+            onOpenVersionManagement={onOpenVersionManagement}
+            hasUnsavedChanges={hasUnsavedChanges}
+          />
+          
           <div className="flex items-center space-x-2">
             {hasUnsavedChanges && (
               <>
                 <Button variant="outline" size="sm" onClick={onResetChanges}>
-                  Reset
+                  Reset Changes
                 </Button>
-                <Button size="sm" onClick={onSaveModel}>
-                  Save Changes
+                <Button 
+                  size="sm" 
+                  onClick={onOpenVersionManagement}
+                  className="flex items-center space-x-2 bg-green-600 hover:bg-green-700"
+                >
+                  <Save className="h-4 w-4" />
+                  <span>Save as Version</span>
                 </Button>
               </>
             )}
@@ -70,11 +92,11 @@ export function SimulationHeader({
             <Button
               variant="outline"
               size="sm"
-              onClick={onEditModel}
+              onClick={onEditSimulation}
               className="flex items-center space-x-2"
             >
               <Edit className="h-4 w-4" />
-              <span>Edit Model</span>
+              <span>Edit Simulation</span>
             </Button>
           </div>
         </div>

@@ -14,9 +14,11 @@ import {
   Model, 
   Expense, 
   Investment,
+  SimulationVersion,
   modelRxSchema, 
   expenseRxSchema,
-  investmentRxSchema
+  investmentRxSchema,
+  simulationVersionRxSchema
 } from './db-schemas';
 
 // Add RxDB plugins
@@ -28,12 +30,14 @@ addRxPlugin(RxDBUpdatePlugin);
 export type ModelCollection = RxCollection<Model>;
 export type ExpenseCollection = RxCollection<Expense>;
 export type InvestmentCollection = RxCollection<Investment>;
+export type SimulationVersionCollection = RxCollection<SimulationVersion>;
 
 // Database collections interface
 export interface DatabaseCollections {
   models: ModelCollection;
   expenses: ExpenseCollection;
   investments: InvestmentCollection;
+  simulationVersions: SimulationVersionCollection;
 }
 
 // Database type
@@ -98,6 +102,9 @@ export const createDatabase = async (): Promise<ReserveFundsDatabase> => {
     },
     investments: {
       schema: investmentRxSchema,
+    },
+    simulationVersions: {
+      schema: simulationVersionRxSchema,
     },
   });
 

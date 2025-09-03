@@ -3,16 +3,18 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { useModels, useExpenses, useInvestments } from '@/hooks/use-database';
-import { ModelEditSidebar } from '@/components/model-edit-sidebar';
+import { useSimulationVersions } from '@/hooks/use-simulation-versions';
+import { SimulationEditSidebar } from '@/components/simulation-edit-sidebar';
 import { YearDetailSidebar } from '@/components/year-detail-sidebar';
 import { OptimizationResultsDialog } from '@/components/optimization-results-dialog';
+import { VersionManagementDialog } from '@/components/version-management-dialog';
 import { 
   generateProjections, getProjectionStats,
   applyYearAdjustments, optimizeCollectionFees,
   SimulationParams, YearProjection, OptimizationResult
 } from '@/lib/simulation';
 import { SimulationInvestment } from '@/components/add-simulation-investment-dialog';
-import { Model } from '@/lib/db-schemas';
+import { Model, SimulationVersion } from '@/lib/db-schemas';
 import { calculateCompoundInterestEarned } from '@/lib/utils';
 import {
   SimulationHeader,
@@ -40,7 +42,6 @@ export default function SimulationPage() {
   const { getModel, updateModel } = useModels();
   const { expenses } = useExpenses(modelId);
   const { investments } = useInvestments(modelId);
-
   const [model, setModel] = useState<Model | null>(null);
   const [simulationParams, setSimulationParams] = useState<SimulationParams | null>(null);
   const [isModelEditOpen, setIsModelEditOpen] = useState(false);
@@ -50,6 +51,13 @@ export default function SimulationPage() {
   const [optimizationResult, setOptimizationResult] = useState<OptimizationResult | null>(null);
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [currentVersionId, setCurrentVersionId] = useState<string | undefined>();
+  const [isVersionManagementOpen, setIsVersionManagementOpen] = useState(false);
+  const { 
+    versions, 
+    createVersion, 
+    deleteVersion 
+  } = useSimulationVersions(modelId);
 
   // Load model data
   useEffect(() => {
@@ -524,18 +532,7 @@ export default function SimulationPage() {
     setOptimizationResult(null);
   }, [setSimulationParams, setYearAdjustments, setOptimizationResult]);
 
-  const handleSaveModel = useCallback(async () => {
-    if (!model || !simulationParams) return;
-
-    try {
-      await updateModel(model.id, simulationParams);
-      // Update local model state
-      setModel({ ...model, ...simulationParams });
-    } catch (error) {
-      console.error('Failed to save model:', error);
-      alert('Failed to save model changes. Please try again.');
-    }
-  }, [updateModel, setModel]);
+  // Removed handleSaveModel - models cannot be updated from simulation
 
   const handleResetChanges = useCallback(() => {
     if (!model) return;
@@ -543,19 +540,77 @@ export default function SimulationPage() {
     setSimulationParams(simParams);
     setYearAdjustments({}); // Clear any year-specific adjustments
     setSimulationInvestments({}); // Clear simulation investments
+    setCurrentVersionId(undefined); // Clear current version
   }, [setSimulationParams, setYearAdjustments, setSimulationInvestments]);
+
+  // Version management handlers
+  const handleSaveVersion = useCallback(async (name: string, description?: string) => {
+    if (!simulationParams) return;
+    
+    try {
+      const versionData = {
+        name,
+        description,
+        modelSnapshot: simulationParams,
+        yearAdjustments,
+        simulationInvestments,
+      };
+      
+      const newVersion = await createVersion(versionData);
+      if (newVersion) {
+        setCurrentVersionId(newVersion.id);
+        alert(`Version "${name}" saved successfully!`);
+      }
+    } catch (error) {
+      console.error('Failed to save version:', error);
+      alert('Failed to save version. Please try again.');
+    }
+  }, [simulationParams, yearAdjustments, simulationInvestments, createVersion]);
+
+  const handleLoadVersion = useCallback((version: SimulationVersion) => {
+    try {
+      // Load the version data
+      setSimulationParams(version.modelSnapshot);
+      setYearAdjustments(version.yearAdjustments || {});
+      setSimulationInvestments(version.simulationInvestments || {});
+      setCurrentVersionId(version.id);
+      
+      alert(`Version "${version.name}" loaded successfully!`);
+    } catch (error) {
+      console.error('Failed to load version:', error);
+      alert('Failed to load version. Please try again.');
+    }
+  }, []);
+
+  const handleDeleteVersion = useCallback(async (versionId: string) => {
+    try {
+      const success = await deleteVersion(versionId);
+      if (success) {
+        if (versionId === currentVersionId) {
+          setCurrentVersionId(undefined);
+        }
+        alert('Version deleted successfully!');
+      }
+    } catch (error) {
+      console.error('Failed to delete version:', error);
+      alert('Failed to delete version. Please try again.');
+    }
+  }, [deleteVersion, currentVersionId]);
 
   const hasUnsavedChanges = useMemo(() => {
     if (!model || !simulationParams) return false;
 
-    // Compare simulation params with original model
+    // If we're viewing a saved version, there are no unsaved changes
+    if (currentVersionId) return false;
+
+    // Check if there are any modifications that could be saved as a version
     const { id, createdAt, updatedAt, ...originalParams } = model;
     const hasModelChanges = JSON.stringify(originalParams) !== JSON.stringify(simulationParams);
     const hasYearAdjustments = Object.keys(yearAdjustments).length > 0;
     const hasSimulationInvestments = Object.keys(simulationInvestments).length > 0;
 
     return hasModelChanges || hasYearAdjustments || hasSimulationInvestments;
-  }, [model, simulationParams, yearAdjustments, simulationInvestments]);
+  }, [model, simulationParams, yearAdjustments, simulationInvestments, currentVersionId]);
 
   if (isLoading) {
     return (
@@ -579,10 +634,13 @@ export default function SimulationPage() {
         model={model}
         hasUnsavedChanges={hasUnsavedChanges}
         isOptimizing={isOptimizing}
+        versions={versions}
+        currentVersionId={currentVersionId}
+        onLoadVersion={handleLoadVersion}
+        onOpenVersionManagement={() => setIsVersionManagementOpen(true)}
         onResetChanges={handleResetChanges}
-        onSaveModel={handleSaveModel}
         onOptimizeFees={handleOptimizeFees}
-        onEditModel={() => setIsModelEditOpen(true)}
+        onEditSimulation={() => setIsModelEditOpen(true)}
       />
 
       <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -605,11 +663,12 @@ export default function SimulationPage() {
       </main>
 
       {/* Sidebars */}
-      <ModelEditSidebar
+      <SimulationEditSidebar
         open={isModelEditOpen}
         onOpenChange={setIsModelEditOpen}
         model={simulationParams}
         onSave={handleModelEdit}
+        currentVersionName={currentVersionId ? versions.find(v => v.id === currentVersionId)?.name : undefined}
       />
 
       {selectedYear && (
@@ -636,6 +695,17 @@ export default function SimulationPage() {
         onOpenChange={(open) => !open && setOptimizationResult(null)}
         result={optimizationResult}
         onApply={handleApplyOptimization}
+      />
+
+      <VersionManagementDialog
+        open={isVersionManagementOpen}
+        onOpenChange={setIsVersionManagementOpen}
+        versions={versions}
+        currentVersionId={currentVersionId}
+        onSaveVersion={handleSaveVersion}
+        onLoadVersion={handleLoadVersion}
+        onDeleteVersion={handleDeleteVersion}
+        hasUnsavedChanges={hasUnsavedChanges}
       />
     </div>
   );
