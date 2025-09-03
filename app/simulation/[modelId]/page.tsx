@@ -327,9 +327,6 @@ export default function SimulationPage() {
   }, [setYearAdjustments]);
 
   const handleAddInvestment = useCallback((investment: SimulationInvestment) => {
-    console.log('🚀 Starting investment addition...');
-    const startTime = performance.now();
-    
     setSimulationInvestments(prev => ({
       ...prev,
       [investment.year]: [...(prev[investment.year] || []), investment]
@@ -345,9 +342,6 @@ export default function SimulationPage() {
         // This is just to track that an adjustment was made
       }
     }));
-    
-    const endTime = performance.now();
-    console.log(`⏱️ handleAddInvestment took ${(endTime - startTime).toFixed(2)}ms`);
   }, [setSimulationInvestments]);
 
   const handleRemoveInvestment = useCallback((year: number, investmentIndex: number) => {
@@ -368,6 +362,12 @@ export default function SimulationPage() {
   }, [setSimulationInvestments]);
 
   const handleLiquidateInvestment = useCallback((investment: SimulationInvestment, startYear: number, currentYear: number) => {
+    // Check if investment is already liquidated
+    if (investment.isLiquidated) {
+      console.log(`Investment ${investment.id} is already liquidated. Skipping duplicate liquidation.`);
+      return;
+    }
+
     const yearsHeld = currentYear - startYear;
 
     // Check liquidation restrictions
@@ -432,24 +432,15 @@ export default function SimulationPage() {
         }
       }
     });
-
-    // Mark the investment as liquidated instead of removing it
-    setSimulationInvestments(prev => {
-      const yearInvestments = prev[startYear] || [];
-      const updatedInvestments = yearInvestments.map(inv =>
-        inv.id === investment.id
-          ? { ...inv, isLiquidated: true, liquidationYear: currentYear, liquidatedAmount: liquidationAmount }
-          : inv
-      );
-
-      return {
-        ...prev,
-        [startYear]: updatedInvestments
-      };
-    });
-  }, [setYearAdjustments, setSimulationInvestments]);
+  }, [setYearAdjustments]);
 
   const handleUnliquidateInvestment = useCallback((investment: SimulationInvestment, startYear: number) => {
+    // Check if investment is actually liquidated
+    if (!investment.isLiquidated) {
+      console.log(`Investment ${investment.id} is not liquidated. Skipping unliquidation.`);
+      return;
+    }
+
     // Remove the liquidation from the year's adjustments
     if (investment.liquidationYear !== undefined) {
       const liquidationYear = investment.liquidationYear;
