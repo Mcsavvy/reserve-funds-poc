@@ -38,9 +38,7 @@ const columnHelper = createColumnHelper<YearProjection>();
 function projectionsToCSV(projections: YearProjection[], model: Model | null, simulationInvestments?: Record<number, any[]>): string {
   const headers = ['Year', 'Opening Balance', 'Collections', 'Expenses', 'Safety Net', 'Loans Taken', 'Loan Payments', 'Available to Invest', 'Invested Amount', 'Investment Liquidations', 'Projected Net Earnings', 'Loss in Purchase Power', 'Closing Balance'];
   const rows = projections.map(p => {
-    const availableToInvest = p.openingBalance + p.collections - p.expenses - p.safetyNet - (p.loanPayments || 0);
-    const yearInvestments = simulationInvestments?.[p.year] || [];
-    const totalInvested = yearInvestments.reduce((sum, inv) => sum + (inv.amountInvested || 0), 0);
+    const lossInPurchasePower = model ? (p.openingBalance * model.inflationRate / 100) : 0;
     
     return [
       p.year,
@@ -50,11 +48,11 @@ function projectionsToCSV(projections: YearProjection[], model: Model | null, si
       p.safetyNet,
       p.loansTaken || 0,
       p.loanPayments || 0,
-      availableToInvest,
-      totalInvested,
+      p.availableToInvest || 0,
+      p.investedAmount || 0,
       p.investmentLiquidations || 0,
-      model ? (p.openingBalance * model.bankInterestRate / 100) : 0,
-      model ? (p.openingBalance * model.inflationRate / 100) : 0,
+      p.projectedNetEarnings || 0,
+      lossInPurchasePower,
       p.closingBalance
     ];
   });
@@ -70,9 +68,7 @@ function projectionsToCSV(projections: YearProjection[], model: Model | null, si
 async function copyTableToClipboard(projections: YearProjection[], model: Model | null, simulationInvestments?: Record<number, any[]>): Promise<void> {
   const headers = ['Year', 'Opening Balance', 'Collections', 'Expenses', 'Safety Net', 'Loans Taken', 'Loan Payments', 'Available to Invest', 'Invested Amount', 'Investment Liquidations', 'Projected Net Earnings', 'Loss in Purchase Power', 'Closing Balance'];
   const rows = projections.map(p => {
-    const availableToInvest = p.openingBalance + p.collections - p.expenses - p.safetyNet - (p.loanPayments || 0);
-    const yearInvestments = simulationInvestments?.[p.year] || [];
-    const totalInvested = yearInvestments.reduce((sum, inv) => sum + (inv.amountInvested || 0), 0);
+    const lossInPurchasePower = model ? (p.openingBalance * model.inflationRate / 100) : 0;
     
     return [
       p.year,
@@ -82,11 +78,11 @@ async function copyTableToClipboard(projections: YearProjection[], model: Model 
       formatCurrency(p.safetyNet),
       formatCurrency(p.loansTaken || 0),
       formatCurrency(p.loanPayments || 0),
-      formatCurrency(availableToInvest),
-      formatCurrency(totalInvested),
+      formatCurrency(p.availableToInvest || 0),
+      formatCurrency(p.investedAmount || 0),
       formatCurrency(p.investmentLiquidations || 0),
-      formatCurrency(model ? (p.openingBalance * model.bankInterestRate / 100) : 0),
-      formatCurrency(model ? (p.openingBalance * model.inflationRate / 100) : 0),
+      formatCurrency(p.projectedNetEarnings || 0),
+      formatCurrency(lossInPurchasePower),
       formatCurrency(p.closingBalance)
     ];
   });
@@ -246,16 +242,10 @@ export function ProjectionTable({ projections, onYearClick, model, simulationInv
       },
     }),
     // New column: Available to Invest
-    columnHelper.display({
-      id: 'availableToInvest',
+    columnHelper.accessor('availableToInvest', {
       header: 'Available to Invest',
       cell: (info) => {
-        const projection = info.row.original;
-        const availableToInvest = projection.openingBalance + 
-          projection.collections - 
-          projection.expenses - 
-          projection.safetyNet - 
-          (projection.loanPayments || 0);
+        const availableToInvest = info.getValue() || 0;
         
         return (
           <div className="space-y-1">
@@ -275,23 +265,22 @@ export function ProjectionTable({ projections, onYearClick, model, simulationInv
       },
     }),
     // New column: Invested Amount
-    columnHelper.display({
-      id: 'investedAmount',
+    columnHelper.accessor('investedAmount', {
       header: 'Invested Amount',
       cell: (info) => {
+        const investedAmount = info.getValue() || 0;
         const year = info.row.original.year;
         const yearInvestments = simulationInvestments?.[year] || [];
-        const totalInvested = yearInvestments.reduce((sum, inv) => sum + (inv.amountInvested || 0), 0);
         
         return (
           <div className="space-y-1">
             <div className={cn(
               "font-medium",
-              totalInvested > 0 ? "text-blue-600" : "text-gray-500"
+              investedAmount > 0 ? "text-blue-600" : "text-gray-500"
             )}>
-              {formatCurrency(totalInvested)}
+              {formatCurrency(investedAmount)}
             </div>
-            {totalInvested > 0 && (
+            {investedAmount > 0 && (
               <Badge variant="secondary" className="text-xs">
                 {yearInvestments.length} investment{yearInvestments.length > 1 ? 's' : ''}
               </Badge>
@@ -325,12 +314,10 @@ export function ProjectionTable({ projections, onYearClick, model, simulationInv
       },
     }),
     // New column: Projected Net Earnings
-    columnHelper.display({
-      id: 'projectedNetEarnings',
+    columnHelper.accessor('projectedNetEarnings', {
       header: 'Projected Net Earnings',
       cell: (info) => {
-        const openingBalance = info.row.original.openingBalance;
-        const projectedEarnings = model ? (openingBalance * model.bankInterestRate / 100) : 0;
+        const projectedEarnings = info.getValue() || 0;
         return (
           <div className="text-emerald-600 font-medium">
             {formatCurrency(projectedEarnings)}

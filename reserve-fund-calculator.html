@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reserve Fund Calculator - Standalone Testing</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+        label {
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #333;
+        }
+        input, textarea {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        textarea {
+            height: 150px;
+            font-family: monospace;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button.normalize {
+            background-color: #28a745;
+        }
+        button.normalize:hover {
+            background-color: #1e7e34;
+        }
+        .table-container {
+            overflow-x: auto;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: right;
+        }
+        th {
+            background-color: #f8f9fa;
+            font-weight: bold;
+            position: sticky;
+            top: 0;
+        }
+        .deficit {
+            background-color: #ffebee;
+            color: #c62828;
+            font-weight: bold;
+        }
+        .surplus {
+            background-color: #e8f5e8;
+            color: #2e7d2e;
+        }
+        .info-panel {
+            background-color: #e3f2fd;
+            border: 1px solid #2196f3;
+            border-radius: 4px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 15px 0;
+        }
+        .stat-item {
+            text-align: center;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+        }
+        .stat-value {
+            font-size: 18px;
+            font-weight: bold;
+            color: #007bff;
+        }
+        .error {
+            color: #dc3545;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .success {
+            color: #155724;
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>🏢 Reserve Fund Calculator - Standalone Testing</h1>
+    
+    <div class="container">
+        <h2>📊 Model Configuration</h2>
+        <div class="form-grid">
+            <div class="form-group">
+                <label for="modelName">Model Name:</label>
+                <input type="text" id="modelName" value="Techtic">
+            </div>
+            <div class="form-group">
+                <label for="period">Period (Years):</label>
+                <input type="number" id="period" value="9">
+            </div>
+            <div class="form-group">
+                <label for="housingUnits">Housing Units:</label>
+                <input type="number" id="housingUnits" value="100">
+            </div>
+            <div class="form-group">
+                <label for="startingAmount">Starting Amount ($):</label>
+                <input type="number" id="startingAmount" value="50000">
+            </div>
+            <div class="form-group">
+                <label for="fiscalYear">Fiscal Year:</label>
+                <input type="number" id="fiscalYear" value="2023">
+            </div>
+            <div class="form-group">
+                <label for="monthlyFee">Monthly Fee per Unit ($):</label>
+                <input type="number" id="monthlyFee" value="20">
+            </div>
+            <div class="form-group">
+                <label for="minimumCollectionFee">Minimum Collection Fee ($):</label>
+                <input type="number" id="minimumCollectionFee" value="0">
+            </div>
+            <div class="form-group">
+                <label for="inflationRate">Inflation Rate (%):</label>
+                <input type="number" id="inflationRate" value="4" step="0.1">
+            </div>
+            <div class="form-group">
+                <label for="maxFeeIncrease">Max Fee Increase (%):</label>
+                <input type="number" id="maxFeeIncrease" value="0" step="0.1">
+            </div>
+            <div class="form-group">
+                <label for="bankInterestRate">Bank Interest Rate (%):</label>
+                <input type="number" id="bankInterestRate" value="0" step="0.1">
+            </div>
+            <div class="form-group">
+                <label for="safetyNetPercentage">Safety Net (%):</label>
+                <input type="number" id="safetyNetPercentage" value="10" step="0.1">
+            </div>
+            <div class="form-group">
+                <label hidden="true" for="cashReserveThreshold">Cash Reserve Threshold (%):</label>
+                <input hidden="true" id="cashReserveThreshold" value="0" step="0.1">
+            </div>
+        </div>
+        
+        <h3>💰 Expenses</h3>
+        <div class="form-group">
+            <label for="expensesJson">Expenses (JSON):</label>
+            <textarea id="expensesJson">[
+  {
+    "sirs": false,
+    "expectedLife": 5,
+    "remainingLife": 5,
+    "name": "Roof",
+    "cost": 500000
+  },
+  {
+    "sirs": false,
+    "expectedLife": 4,
+    "remainingLife": 3,
+    "name": "Sinks",
+    "cost": 20000
+  }
+]</textarea>
+        </div>
+        
+        <div>
+            <button onclick="calculateProjections()">🔄 Calculate Original Projections</button>
+            <button onclick="normalizeProjections()" class="normalize">✨ Normalize (Optimize Fees)</button>
+            <button onclick="loadSampleData()">📋 Load Sample Data</button>
+            <button onclick="exportToJSON()">💾 Export to JSON</button>
+        </div>
+    </div>
+
+    <div id="results-container" class="container" style="display: none;">
+        <h2>📈 Calculation Results</h2>
+        <div id="stats-panel"></div>
+        <div id="message-panel"></div>
+        <div class="table-container">
+            <table id="results-table">
+                <thead>
+                    <tr>
+                        <th>Year</th>
+                        <th>Opening Balance</th>
+                        <th>Collections</th>
+                        <th>Expenses</th>
+                        <th>Safety Net</th>
+                        <th>Loans Taken</th>
+                        <th>Loan Payments</th>
+                        <th>Available to Invest</th>
+                        <th>Invested Amount</th>
+                        <th>Investment Liquidations</th>
+                        <th>Projected Net Earnings</th>
+                        <th>Loss in Purchase Power</th>
+                        <th>Closing Balance</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let currentProjections = [];
+        let isNormalized = false;
+
+        // Utility functions
+        function formatMoney(amount) {
+            return new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD',
+                minimumFractionDigits: 2
+            }).format(amount || 0);
+        }
+
+        function getModelParams() {
+            return {
+                name: document.getElementById('modelName').value,
+                period: parseInt(document.getElementById('period').value),
+                housingUnits: parseInt(document.getElementById('housingUnits').value),
+                startingAmount: parseFloat(document.getElementById('startingAmount').value),
+                fiscalYear: parseInt(document.getElementById('fiscalYear').value),
+                monthlyReserveFeesPerHousingUnit: parseFloat(document.getElementById('monthlyFee').value),
+                minimumCollectionFee: parseFloat(document.getElementById('minimumCollectionFee').value),
+                inflationRate: parseFloat(document.getElementById('inflationRate').value),
+                maximumAllowableFeeIncrease: parseFloat(document.getElementById('maxFeeIncrease').value),
+                bankInterestRate: parseFloat(document.getElementById('bankInterestRate').value),
+                safetyNetPercentage: parseFloat(document.getElementById('safetyNetPercentage').value),
+                cashReserveThresholdPercentage: parseFloat(document.getElementById('cashReserveThreshold').value)
+            };
+        }
+
+        function getExpenses() {
+            try {
+                return JSON.parse(document.getElementById('expensesJson').value);
+            } catch (e) {
+                showMessage('Error parsing expenses JSON: ' + e.message, 'error');
+                return [];
+            }
+        }
+
+        function showMessage(message, type = 'info') {
+            const panel = document.getElementById('message-panel');
+            panel.className = type;
+            panel.innerHTML = message;
+            panel.style.display = 'block';
+        }
+
+        // Core calculation functions
+        function calculateYearExpenses(expenses, year, fiscalYear, inflationRate) {
+            let totalExpenses = 0;
+            const expenseDetails = [];
+            
+            expenses.forEach(expense => {
+                const yearsSinceStart = year - fiscalYear;
+                const inflationMultiplier = Math.pow(1 + (inflationRate / 100), yearsSinceStart);
+                const adjustedCost = expense.cost * inflationMultiplier;
+                
+                // Check if expense occurs in this year (recurring logic)
+                const yearsFromStart = year - fiscalYear;
+                
+                // If remaining life is greater than years from fiscal year, expense doesn't occur yet
+                if (yearsFromStart < expense.remainingLife) {
+                    return; // Skip this expense for this year
+                }
+                
+                // Calculate how many cycles have passed since the first occurrence
+                const yearsSinceFirstOccurrence = yearsFromStart - expense.remainingLife;
+                
+                // Expense occurs every expectedLife years after the first occurrence
+                const doesOccur = yearsSinceFirstOccurrence % expense.expectedLife === 0;
+                
+                if (doesOccur) {
+                    totalExpenses += adjustedCost;
+                    expenseDetails.push({
+                        name: expense.name,
+                        cost: adjustedCost,
+                        year: year,
+                        cycle: Math.floor(yearsSinceFirstOccurrence / expense.expectedLife) + 1
+                    });
+                    console.log(`💰 ${expense.name} occurs in ${year} (Cycle ${Math.floor(yearsSinceFirstOccurrence / expense.expectedLife) + 1}) - Cost: $${adjustedCost.toLocaleString()}`);
+                }
+            });
+            
+            return { totalExpenses, expenseDetails };
+        }
+
+        function generateProjections(params, expenses, yearAdjustments = {}, normalized = false) {
+            const projections = [];
+            let currentBalance = params.startingAmount;
+            
+            for (let i = 0; i < params.period; i++) {
+                const year = params.fiscalYear + i;
+                const yearsSinceStart = i;
+                
+                // Calculate expenses first (needed for auto-adjustment logic)
+                const { totalExpenses, expenseDetails } = calculateYearExpenses(expenses, year, params.fiscalYear, params.inflationRate);
+                
+                // Calculate base monthly fee with inflation
+                const inflationMultiplier = Math.pow(1 + (params.inflationRate / 100), yearsSinceStart);
+                let baseMonthlyFee = params.monthlyReserveFeesPerHousingUnit * inflationMultiplier;
+                
+                // Apply intelligent fee adjustment logic for non-normalized projections
+                if (!normalized && i > 0) {
+                    const previousFee = projections[i-1].monthlyFee;
+                    const minimumFee = params.minimumCollectionFee || 0;
+                    
+                    // Check for upcoming major expenses in the next 5 years
+                    let hasUpcomingMajorExpenses = false;
+                    let totalUpcomingExpenses = 0;
+                    const lookAheadYears = 5; // Look ahead 5 years for fee planning
+                    
+                    for (let futureYear = year + 1; futureYear <= year + lookAheadYears && futureYear < params.fiscalYear + params.period; futureYear++) {
+                        const { totalExpenses: futureExpenses } = calculateYearExpenses(expenses, futureYear, params.fiscalYear, params.inflationRate);
+                        totalUpcomingExpenses += futureExpenses;
+                        
+                        if (futureExpenses > currentBalance * 0.1) { // If future expense > 10% of current balance
+                            hasUpcomingMajorExpenses = true;
+                        }
+                    }
+                    
+                    // Calculate current financial situation with current fee
+                    const currentCollections = previousFee * 12 * params.housingUnits;
+                    const currentSafetyNet = totalExpenses * (params.safetyNetPercentage / 100);
+                    const currentLossInPurchasePower = currentBalance > 0 ? 
+                        currentBalance * (params.inflationRate / 100) : 0;
+                    const currentClosingBalance = currentBalance + currentCollections - 
+                        totalExpenses - currentSafetyNet - currentLossInPurchasePower;
+                    
+                    // Calculate maximum allowed fee increase
+                    let maxAllowedFee = previousFee;
+                    if (params.maximumAllowableFeeIncrease > 0) {
+                        maxAllowedFee = previousFee * (1 + params.maximumAllowableFeeIncrease / 100);
+                    }
+                    
+                    console.log(`🧠 Year ${year} Intelligent Fee Decision:`);
+                    console.log(`   Current balance: $${currentBalance.toLocaleString()}`);
+                    console.log(`   Current expenses: $${totalExpenses.toLocaleString()}`);
+                    console.log(`   Upcoming expenses (5y): $${totalUpcomingExpenses.toLocaleString()}`);
+                    console.log(`   Previous fee: $${previousFee.toFixed(2)}/unit`);
+                    console.log(`   Max allowed fee: $${maxAllowedFee.toFixed(2)}/unit`);
+                    console.log(`   Current closing balance: $${currentClosingBalance.toLocaleString()}`);
+                    
+                    // Intelligent fee adjustment decision
+                    if (currentClosingBalance < 0) {
+                        // DEFICIT: Increase fees up to maximum allowed
+                        const deficitAmount = Math.abs(currentClosingBalance);
+                        const additionalCollectionsNeeded = deficitAmount * 1.1; // 10% buffer
+                        const additionalMonthlyFeeNeeded = additionalCollectionsNeeded / (12 * params.housingUnits);
+                        const targetFee = previousFee + additionalMonthlyFeeNeeded;
+                        
+                        baseMonthlyFee = Math.min(targetFee, maxAllowedFee);
+                        console.log(`   🚨 DEFICIT - Increasing fees to $${baseMonthlyFee.toFixed(2)}/unit`);
+                        
+                        const increasePercentage = ((baseMonthlyFee - previousFee) / previousFee) * 100;
+                        window.autoAdjustments = window.autoAdjustments || {};
+                        window.autoAdjustments[year] = {
+                            oldFee: previousFee,
+                            newFee: baseMonthlyFee,
+                            increase: increasePercentage
+                        };
+                    }
+                    else if (hasUpcomingMajorExpenses && currentClosingBalance < totalUpcomingExpenses * 0.5) {
+                        // UPCOMING EXPENSES: Prepare by increasing fees gradually
+                        const preparationNeeded = (totalUpcomingExpenses * 0.5) - currentClosingBalance;
+                        const preparationFeeIncrease = (preparationNeeded / lookAheadYears) / (12 * params.housingUnits);
+                        const targetFee = previousFee + preparationFeeIncrease;
+                        
+                        baseMonthlyFee = Math.min(targetFee, maxAllowedFee);
+                        console.log(`   📈 PREPARING for upcoming expenses - Gradual increase to $${baseMonthlyFee.toFixed(2)}/unit`);
+                        
+                        if (baseMonthlyFee > previousFee) {
+                            const increasePercentage = ((baseMonthlyFee - previousFee) / previousFee) * 100;
+                            window.autoAdjustments = window.autoAdjustments || {};
+                            window.autoAdjustments[year] = {
+                                oldFee: previousFee,
+                                newFee: baseMonthlyFee,
+                                increase: increasePercentage
+                            };
+                        }
+                    }
+                    else if (currentClosingBalance > (totalExpenses + currentSafetyNet) * 3) {
+                        // LARGE SURPLUS: Only reduce if very large surplus and no major upcoming expenses
+                        if (!hasUpcomingMajorExpenses) {
+                            const surplusAmount = currentClosingBalance;
+                            const maxCollectionReduction = surplusAmount * 0.3; // Only reduce 30% of surplus
+                            const maxFeeReduction = maxCollectionReduction / (12 * params.housingUnits);
+                            const targetFee = Math.max(minimumFee, previousFee - maxFeeReduction);
+                            
+                            if (targetFee < previousFee) {
+                                baseMonthlyFee = targetFee;
+                                console.log(`   💰 LARGE SURPLUS - Reducing fees to $${baseMonthlyFee.toFixed(2)}/unit`);
+                                
+                                const decreasePercentage = ((previousFee - baseMonthlyFee) / previousFee) * 100;
+                                window.autoAdjustments = window.autoAdjustments || {};
+                                window.autoAdjustments[year] = {
+                                    oldFee: previousFee,
+                                    newFee: baseMonthlyFee,
+                                    increase: -decreasePercentage
+                                };
+                            }
+                        } else {
+                            baseMonthlyFee = previousFee;
+                            console.log(`   💰 Large surplus but upcoming expenses - MAINTAINING fees at $${baseMonthlyFee.toFixed(2)}/unit`);
+                        }
+                    }
+                    else {
+                        // STABLE SITUATION: Apply minimal inflation adjustment only if allowed
+                        if (params.maximumAllowableFeeIncrease > 0) {
+                            // Very conservative inflation adjustment - only 50% of inflation rate
+                            const conservativeInflationIncrease = previousFee * (params.inflationRate / 100) * 0.5;
+                            const targetFee = previousFee + conservativeInflationIncrease;
+                            
+                            baseMonthlyFee = Math.min(targetFee, maxAllowedFee);
+                            console.log(`   ⚖️ STABLE - Conservative adjustment to $${baseMonthlyFee.toFixed(2)}/unit`);
+                            
+                            if (baseMonthlyFee > previousFee) {
+                                const increasePercentage = ((baseMonthlyFee - previousFee) / previousFee) * 100;
+                                window.autoAdjustments = window.autoAdjustments || {};
+                                window.autoAdjustments[year] = {
+                                    oldFee: previousFee,
+                                    newFee: baseMonthlyFee,
+                                    increase: increasePercentage
+                                };
+                            }
+                        } else {
+                            // If Max Fee Increase % is 0, keep current fee unchanged
+                            baseMonthlyFee = previousFee;
+                            console.log(`   🔒 Max increase 0% - MAINTAINING fees at $${baseMonthlyFee.toFixed(2)}/unit`);
+                        }
+                    }
+                }
+                
+                // Calculate collections
+                let collections = baseMonthlyFee * 12 * params.housingUnits;
+                
+                // Apply year adjustments if provided
+                if (yearAdjustments[year]) {
+                    collections = yearAdjustments[year].collections || collections;
+                }
+                
+                // Calculate safety net (percentage of expenses)
+                const safetyNet = totalExpenses * (params.safetyNetPercentage / 100);
+                
+                // Calculate loss in purchase power (inflation on positive balance)
+                const lossInPurchasePower = currentBalance > 0 ? 
+                    currentBalance * (params.inflationRate / 100) : 0;
+                
+                // For this simplified version, no loans or investments
+                const loansTaken = 0;
+                const loanPayments = 0;
+                const investedAmount = 0;
+                const investmentLiquidations = 0;
+                const projectedNetEarnings = 0;
+                
+                // Calculate available to invest
+                const availableToInvest = Math.max(0, 
+                    currentBalance + collections + investmentLiquidations - 
+                    totalExpenses - safetyNet - loanPayments - lossInPurchasePower
+                );
+                
+                // Calculate closing balance
+                const closingBalance = currentBalance + collections + investmentLiquidations - 
+                    totalExpenses - safetyNet - loanPayments - lossInPurchasePower;
+                
+                projections.push({
+                    year,
+                    openingBalance: currentBalance,
+                    collections,
+                    expenses: totalExpenses,
+                    safetyNet,
+                    loansTaken,
+                    loanPayments,
+                    availableToInvest,
+                    investedAmount,
+                    investmentLiquidations,
+                    projectedNetEarnings,
+                    lossInPurchasePower,
+                    closingBalance,
+                    monthlyFee: collections / (12 * params.housingUnits),
+                    expenseDetails
+                });
+                
+                // Update current balance for next year
+                currentBalance = closingBalance;
+            }
+            
+            return projections;
+        }
+
+        function applyNormalizationToProjections(projections, params) {
+            console.log('🔧 Applying normalization...');
+            
+            const minimumFee = params.minimumCollectionFee || 0;
+            const minimumCollections = minimumFee * 12 * params.housingUnits;
+            
+            // Find total deficit
+            let totalDeficit = 0;
+            let yearsWithDeficit = 0;
+            
+            for (const projection of projections) {
+                if (projection.closingBalance < 0) {
+                    totalDeficit += Math.abs(projection.closingBalance);
+                    yearsWithDeficit++;
+                }
+            }
+            
+            console.log(`Total deficit: $${totalDeficit.toLocaleString()}, Years with deficit: ${yearsWithDeficit}`);
+            console.log(`Minimum collection fee: $${minimumFee.toFixed(2)}/unit (${minimumCollections.toLocaleString()} annually)`);
+            
+            if (totalDeficit > 0) {
+                // Calculate additional collections needed per year
+                const additionalCollectionsPerYear = (totalDeficit * 1.2) / projections.length;
+                
+                const maxIterations = 5;
+                let iteration = 0;
+                
+                while (iteration < maxIterations) {
+                    iteration++;
+                    console.log(`🔄 Iteration ${iteration}`);
+                    
+                    let currentBalance = params.startingAmount;
+                    let hasDeficit = false;
+                    
+                    for (let i = 0; i < projections.length; i++) {
+                        const projection = projections[i];
+                        projection.openingBalance = currentBalance;
+                        
+                        // Apply additional collections on first iteration
+                        if (iteration === 1) {
+                            projection.collections += additionalCollectionsPerYear;
+                        }
+                        
+                        // Ensure collections meet minimum requirement
+                        projection.collections = Math.max(projection.collections, minimumCollections);
+                        
+                        // Recalculate all values
+                        const lossInPurchasePower = projection.openingBalance > 0 ? 
+                            projection.openingBalance * (params.inflationRate / 100) : 0;
+                        
+                        projection.availableToInvest = Math.max(0, 
+                            projection.openingBalance + projection.collections + 
+                            projection.investmentLiquidations - projection.expenses - 
+                            projection.safetyNet - projection.loanPayments - lossInPurchasePower
+                        );
+                        
+                        projection.closingBalance = projection.openingBalance + projection.collections + 
+                            projection.investmentLiquidations - projection.expenses - 
+                            projection.safetyNet - projection.loanPayments - lossInPurchasePower;
+                        
+                        // If still deficit, add extra collections for this specific year
+                        if (projection.closingBalance < 0) {
+                            hasDeficit = true;
+                            const extraCollections = Math.abs(projection.closingBalance) * 1.1;
+                            projection.collections += extraCollections;
+                            
+                            // Recalculate again
+                            projection.availableToInvest = Math.max(0, 
+                                projection.openingBalance + projection.collections + 
+                                projection.investmentLiquidations - projection.expenses - 
+                                projection.safetyNet - projection.loanPayments - lossInPurchasePower
+                            );
+                            
+                            projection.closingBalance = projection.openingBalance + projection.collections + 
+                                projection.investmentLiquidations - projection.expenses - 
+                                projection.safetyNet - projection.loanPayments - lossInPurchasePower;
+                            
+                            console.log(`  Year ${projection.year}: Added $${extraCollections.toLocaleString()} extra collections`);
+                        }
+                        
+                        // Update monthly fee
+                        projection.monthlyFee = projection.collections / (12 * params.housingUnits);
+                        projection.lossInPurchasePower = lossInPurchasePower;
+                        
+                        currentBalance = projection.closingBalance;
+                    }
+                    
+                    if (!hasDeficit) {
+                        console.log(`✅ Normalization completed in ${iteration} iterations`);
+                        break;
+                    }
+                }
+            }
+            
+            // After normalization, check if we can reduce fees while respecting minimum
+            // Only reduce fees if surplus is very large and no upcoming major expenses
+            console.log('🔍 Checking for conservative fee reduction opportunities...');
+            for (let i = 0; i < projections.length; i++) {
+                const projection = projections[i];
+                if (projection.closingBalance > 0) {
+                    // Check for upcoming expenses in next 3 years
+                    let hasUpcomingMajorExpenses = false;
+                    for (let j = i + 1; j < Math.min(i + 4, projections.length); j++) {
+                        if (projections[j].expenses > projection.closingBalance * 0.3) {
+                            hasUpcomingMajorExpenses = true;
+                            break;
+                        }
+                    }
+                    
+                    const surplusAmount = projection.closingBalance;
+                    const isVeryLargeSurplus = surplusAmount > (projection.expenses + projection.safetyNet) * 3; // Surplus > 3x current costs
+                    
+                    if (isVeryLargeSurplus && !hasUpcomingMajorExpenses) {
+                        // Very conservative reduction - only 20% of surplus
+                        const maxCollectionReduction = surplusAmount * 0.2;
+                        const potentialReduction = Math.min(maxCollectionReduction, projection.collections - minimumCollections);
+                        
+                        if (potentialReduction > 0) {
+                            const oldCollections = projection.collections;
+                            projection.collections -= potentialReduction;
+                            projection.monthlyFee = projection.collections / (12 * params.housingUnits);
+                            
+                            // Recalculate closing balance
+                            const lossInPurchasePower = projection.openingBalance > 0 ? 
+                                projection.openingBalance * (params.inflationRate / 100) : 0;
+                            projection.closingBalance = projection.openingBalance + projection.collections + 
+                                projection.investmentLiquidations - projection.expenses - 
+                                projection.safetyNet - projection.loanPayments - lossInPurchasePower;
+                            
+                            console.log(`  Year ${projection.year}: Conservative fee reduction by $${potentialReduction.toLocaleString()}`);
+                        }
+                    }
+                }
+            }
+        }
+
+        function getProjectionStats(projections) {
+            let negativeBalanceYears = 0;
+            let totalDeficit = 0;
+            let totalSurplus = 0;
+            
+            projections.forEach(p => {
+                if (p.closingBalance < 0) {
+                    negativeBalanceYears++;
+                    totalDeficit += Math.abs(p.closingBalance);
+                } else {
+                    totalSurplus += p.closingBalance;
+                }
+            });
+            
+            return {
+                negativeBalanceYears,
+                totalDeficit,
+                totalSurplus,
+                finalBalance: projections[projections.length - 1]?.closingBalance || 0
+            };
+        }
+
+        // UI functions
+        function calculateProjections() {
+            try {
+                // Clear previous auto-adjustments
+                window.autoAdjustments = {};
+                
+                const params = getModelParams();
+                const expenses = getExpenses();
+                
+                currentProjections = generateProjections(params, expenses, {}, false);
+                isNormalized = false;
+                
+                displayResults(currentProjections, 'Original Projections');
+                showMessage('✅ Original projections calculated successfully!', 'success');
+            } catch (error) {
+                showMessage('❌ Error calculating projections: ' + error.message, 'error');
+                console.error(error);
+            }
+        }
+
+        function normalizeProjections() {
+            try {
+                // Clear previous auto-adjustments
+                window.autoAdjustments = {};
+                
+                const params = getModelParams();
+                const expenses = getExpenses();
+                
+                // Generate original projections first
+                const originalProjections = generateProjections(params, expenses, {}, false);
+                
+                // Create a copy for normalization
+                const normalizedProjections = JSON.parse(JSON.stringify(originalProjections));
+                
+                // Apply normalization
+                applyNormalizationToProjections(normalizedProjections, params);
+                
+                currentProjections = normalizedProjections;
+                isNormalized = true;
+                
+                displayResults(normalizedProjections, 'Normalized Projections (Optimized Fees)');
+                showMessage('✅ Fee normalization completed successfully!', 'success');
+            } catch (error) {
+                showMessage('❌ Error normalizing projections: ' + error.message, 'error');
+                console.error(error);
+            }
+        }
+
+        function displayResults(projections, title) {
+            const container = document.getElementById('results-container');
+            const tableBody = document.querySelector('#results-table tbody');
+            const statsPanel = document.getElementById('stats-panel');
+            
+            // Clear previous results
+            tableBody.innerHTML = '';
+            
+            // Calculate stats
+            const stats = getProjectionStats(projections);
+            
+            // Display stats
+            statsPanel.innerHTML = `
+                <h3>${title}</h3>
+                <div class="stats">
+                    <div class="stat-item">
+                        <div class="stat-value">${stats.negativeBalanceYears}</div>
+                        <div>Years with Deficit</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value">${formatMoney(stats.totalDeficit)}</div>
+                        <div>Total Deficit</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value">${formatMoney(stats.finalBalance)}</div>
+                        <div>Final Balance</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value">${formatMoney(projections[0]?.monthlyFee || 0)}</div>
+                        <div>First Year Monthly Fee</div>
+                    </div>
+                </div>
+            `;
+            
+            // Display table
+            projections.forEach((projection, index) => {
+                const row = document.createElement('tr');
+                const isDeficit = projection.closingBalance < 0;
+                const autoAdjustment = window.autoAdjustments && window.autoAdjustments[projection.year];
+                
+                row.innerHTML = `
+                    <td>${projection.year}</td>
+                    <td>${formatMoney(projection.openingBalance)}</td>
+                    <td>${formatMoney(projection.collections)}${autoAdjustment && Math.abs(autoAdjustment.increase) > 0.01 ? '<br><small style="color: ' + (autoAdjustment.increase > 0 ? '#ff6b35' : '#28a745') + ';">' + (autoAdjustment.increase > 0 ? '⚡ Fee +' : '💰 Fee -') + Math.abs(autoAdjustment.increase).toFixed(1) + '%</small>' : ''}</td>
+                    <td>${formatMoney(projection.expenses)}${projection.expenseDetails.length > 0 ? '<br><small>' + projection.expenseDetails.map(e => `${e.name} (Cycle ${e.cycle})`).join(', ') + '</small>' : ''}</td>
+                    <td>${formatMoney(projection.safetyNet)}</td>
+                    <td>${formatMoney(projection.loansTaken)}</td>
+                    <td>${formatMoney(projection.loanPayments)}</td>
+                    <td>${formatMoney(projection.availableToInvest)}</td>
+                    <td>${formatMoney(projection.investedAmount)}</td>
+                    <td>${formatMoney(projection.investmentLiquidations)}</td>
+                    <td>${formatMoney(projection.projectedNetEarnings)}</td>
+                    <td>${formatMoney(projection.lossInPurchasePower)}</td>
+                    <td class="${isDeficit ? 'deficit' : 'surplus'}">${formatMoney(projection.closingBalance)}</td>
+                `;
+                
+                tableBody.appendChild(row);
+            });
+            
+            container.style.display = 'block';
+        }
+
+        function loadSampleData() {
+            // Reset to the provided sample data
+            document.getElementById('modelName').value = 'Techtic';
+            document.getElementById('period').value = '9';
+            document.getElementById('housingUnits').value = '100';
+            document.getElementById('startingAmount').value = '50000';
+            document.getElementById('fiscalYear').value = '2023';
+            document.getElementById('monthlyFee').value = '20';
+            document.getElementById('minimumCollectionFee').value = '0';
+            document.getElementById('inflationRate').value = '4';
+            document.getElementById('maxFeeIncrease').value = '0';
+            document.getElementById('bankInterestRate').value = '0';
+            document.getElementById('safetyNetPercentage').value = '10';
+            document.getElementById('cashReserveThreshold').value = '15';
+            
+            document.getElementById('expensesJson').value = `[
+  {
+    "sirs": false,
+    "expectedLife": 5,
+    "remainingLife": 0,
+    "name": "Roof",
+    "cost": 500000
+  },
+  {
+    "sirs": false,
+    "expectedLife": 4,
+    "remainingLife": 3,
+    "name": "Sinks",
+    "cost": 20000
+  }
+]`;
+            
+            showMessage('📋 Sample data loaded successfully!', 'success');
+        }
+
+        function exportToJSON() {
+            try {
+                const params = getModelParams();
+                const expenses = getExpenses();
+                
+                const exportData = {
+                    model: params,
+                    expenses: expenses,
+                    projections: currentProjections,
+                    isNormalized: isNormalized,
+                    timestamp: new Date().toISOString()
+                };
+                
+                const dataStr = JSON.stringify(exportData, null, 2);
+                const dataBlob = new Blob([dataStr], {type: 'application/json'});
+                
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(dataBlob);
+                link.download = `reserve-fund-${isNormalized ? 'normalized' : 'original'}-${new Date().toISOString().split('T')[0]}.json`;
+                link.click();
+                
+                showMessage('💾 Data exported successfully!', 'success');
+            } catch (error) {
+                showMessage('❌ Error exporting data: ' + error.message, 'error');
+            }
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            loadSampleData();
+            showMessage('🏢 Reserve Fund Calculator loaded. Click "Calculate Original Projections" to start!', 'info');
+        });
+    </script>
+</body>
+</html>

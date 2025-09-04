@@ -170,7 +170,7 @@ export default function SimulationPage() {
     
     // Apply year adjustments and recalculate subsequent years
     if (Object.keys(yearAdjustments).length > 0) {
-      baseProjections = applyYearAdjustments(baseProjections, yearAdjustments);
+      baseProjections = applyYearAdjustments(baseProjections, yearAdjustments, simulationParams);
     }
     
     // Apply simulation investments to projections
@@ -400,9 +400,13 @@ export default function SimulationPage() {
   const handleOptimizeFees = async () => {
     if (!simulationParams || !expenses) return;
     
+
+    
     setIsOptimizing(true);
     try {
-      const result = optimizeCollectionFees(simulationParams, expenses);
+      // Use clean simulation params without any existing adjustments
+      const cleanParams = { ...simulationParams };
+      const result = optimizeCollectionFees(cleanParams, expenses);
       setOptimizationResult(result);
     } catch (error) {
       console.error('Optimization failed:', error);
@@ -413,6 +417,8 @@ export default function SimulationPage() {
 
   const handleApplyOptimization = (optimizedParams: SimulationParams) => {
     if (!optimizationResult) return;
+    
+
     
     // If there are yearly adjustments, convert them to year adjustments format
     if (optimizationResult.hasYearlyAdjustments) {
@@ -425,7 +431,6 @@ export default function SimulationPage() {
           collections: annualCollections
         };
       });
-      
       setYearAdjustments(newYearAdjustments);
     } else {
       // For flat fee optimization, update the simulation params
