@@ -60,6 +60,7 @@ export interface SimulationInvestment extends SimulationInvestmentData {
   isLiquidated?: boolean;
   liquidationYear?: number;
   liquidatedAmount?: number;
+  penaltyApplied?: number;
 }
 
 interface AddSimulationInvestmentDialogProps {

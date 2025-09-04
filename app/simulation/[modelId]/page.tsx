@@ -163,6 +163,13 @@ export default function SimulationPage() {
             const liquidationAmount = ongoing.investment.liquidatedAmount || ongoing.currentValue;
 
             // Add manual liquidation record
+            const yearsHeld = year - ongoing.startYear;
+            const isEarlyLiquidation = yearsHeld < ongoing.investment.terms;
+            const interestEarned = ongoing.investment.liquidatedAmount ? ongoing.investment.liquidatedAmount - ongoing.investment.amountInvested : 0;
+            // Calculate penalty based on liquidated amount vs expected amount
+            const expectedAmount = ongoing.investment.amountInvested + interestEarned;
+            const penaltyApplied = ongoing.investment.liquidatedAmount ? Math.max(0, expectedAmount - ongoing.investment.liquidatedAmount) : 0;
+            
             yearInvestmentLiquidations.push({
               investmentId: ongoing.investment.id,
               investmentName: ongoing.investment.strategyName || `${ongoing.investment.investmentType} Investment`,
@@ -170,21 +177,31 @@ export default function SimulationPage() {
               liquidationYear: year,
               originalAmount: ongoing.investment.amountInvested,
               liquidatedAmount: liquidationAmount,
-              yearsHeld: year - ongoing.startYear,
-              interestEarned: ongoing.investment.liquidatedAmount ? ongoing.investment.liquidatedAmount - ongoing.investment.amountInvested : 0,
-              penaltyApplied: 0,
-              isEarlyLiquidation: year - ongoing.startYear < ongoing.investment.terms
+              yearsHeld: yearsHeld,
+              interestEarned: interestEarned,
+              penaltyApplied: penaltyApplied,
+              isEarlyLiquidation: isEarlyLiquidation
             });
           }
         }
       });
 
-      // Add manual liquidations from year adjustments
+      // Add manual liquidations from year adjustments (but avoid duplicates)
       const yearAdjustment = yearAdjustments[year];
       if (yearAdjustment?.investmentLiquidations) {
-        // Handle array of liquidation objects
+        // Handle array of liquidation objects, but filter out those already processed above
         yearAdjustment.investmentLiquidations.forEach((liquidation: LiquidationRecord) => {
-          yearInvestmentLiquidations.push(liquidation);
+          // Check if this liquidation is already handled by the ongoing investment processing
+          const alreadyProcessed = yearInvestmentLiquidations.some(existing => 
+            existing.investmentId === liquidation.investmentId && 
+            existing.liquidationYear === liquidation.liquidationYear
+          );
+          
+          if (!alreadyProcessed) {
+            yearInvestmentLiquidations.push(liquidation);
+          } else {
+            console.log(`Skipping duplicate liquidation for investment ${liquidation.investmentId} in year ${year}`);
+          }
         });
       }
 
@@ -197,7 +214,10 @@ export default function SimulationPage() {
         ...projection,
         investmentLiquidations: yearInvestmentLiquidations,
         simulationInvestmentDetails: {
-          ongoingInvestments: ongoingInvestments.filter(o => !o.isLiquidated && o.startYear <= year),
+          ongoingInvestments: ongoingInvestments.filter(o => 
+            o.startYear <= year && 
+            (!o.isLiquidated || (o.liquidationYear && o.liquidationYear > year))
+          ),
           liquidatedInvestments: ongoingInvestments.filter(o => o.isLiquidated && o.liquidationYear === year),
           totalInterest: yearInvestmentInterest
         }
@@ -413,75 +433,18 @@ export default function SimulationPage() {
       console.log(`liquidationAmount after penalty: ${liquidationAmount}`);
     }
 
-    // Add liquidation to the current year's adjustments
-    setYearAdjustments(prev => {
-      const currentYearAdjustments = prev[currentYear] || {};
-      const existingLiquidations: LiquidationRecord[] = currentYearAdjustments.investmentLiquidations || [];
-
-      // Create liquidation object
-      const liquidationRecord: LiquidationRecord = {
-        investmentId: investment.id,
-        investmentName: investment.strategyName || `${investment.investmentType} Investment`,
-        startYear: startYear,
-        liquidationYear: currentYear,
-        originalAmount: investment.amountInvested,
-        liquidatedAmount: liquidationAmount,
-        yearsHeld: yearsHeld,
-        interestEarned: compoundInterest,
-        penaltyApplied: yearsHeld < investment.terms ? liquidationAmount - (investment.amountInvested + compoundInterest) : 0,
-        isEarlyLiquidation: yearsHeld < investment.terms
-      };
-
-      return {
-        ...prev,
-        [currentYear]: {
-          ...currentYearAdjustments,
-          investmentLiquidations: [...existingLiquidations.filter(l => l.investmentId !== investment.id), liquidationRecord]
-        }
-      }
-    });
-  }, [setYearAdjustments]);
-
-  const handleUnliquidateInvestment = useCallback((investment: SimulationInvestment, startYear: number) => {
-    // Check if investment is actually liquidated
-    if (!investment.isLiquidated) {
-      console.log(`Investment ${investment.id} is not liquidated. Skipping unliquidation.`);
-      return;
-    }
-
-    // Remove the liquidation from the year's adjustments
-    if (investment.liquidationYear !== undefined) {
-      const liquidationYear = investment.liquidationYear;
-
-      setYearAdjustments(prev => {
-        const currentYearAdjustments = prev[liquidationYear] || {};
-        const existingLiquidations = currentYearAdjustments.investmentLiquidations || [];
-
-        // Remove the specific liquidation record for this investment
-        const updatedLiquidations = existingLiquidations.filter(
-          (liquidation: any) => liquidation.investmentId !== investment.id
-        );
-
-        return {
-          ...prev,
-          [liquidationYear]: {
-            ...currentYearAdjustments,
-            investmentLiquidations: updatedLiquidations
-          }
-        };
-      });
-    }
-
-    // Mark the investment as not liquidated
+    // Mark the investment as liquidated in simulationInvestments state
+    // The applySimulationInvestments function will handle creating the liquidation record
     setSimulationInvestments(prev => {
       const yearInvestments = prev[startYear] || [];
       const updatedInvestments = yearInvestments.map(inv =>
         inv === investment
           ? {
             ...inv,
-            isLiquidated: false,
-            liquidationYear: undefined,
-            liquidatedAmount: undefined
+            isLiquidated: true,
+            liquidationYear: currentYear,
+            liquidatedAmount: liquidationAmount,
+            penaltyApplied: yearsHeld < investment.terms ? liquidationAmount - (investment.amountInvested + compoundInterest) : 0
           }
           : inv
       );
@@ -491,7 +454,37 @@ export default function SimulationPage() {
         [startYear]: updatedInvestments
       };
     });
-  }, [setYearAdjustments, setSimulationInvestments]);
+  }, [setSimulationInvestments]);
+
+  const handleUnliquidateInvestment = useCallback((investment: SimulationInvestment, startYear: number) => {
+    // Check if investment is actually liquidated
+    if (!investment.isLiquidated) {
+      console.log(`Investment ${investment.id} is not liquidated. Skipping unliquidation.`);
+      return;
+    }
+
+    // Mark the investment as not liquidated
+    // The applySimulationInvestments function will handle removing the liquidation record
+    setSimulationInvestments(prev => {
+      const yearInvestments = prev[startYear] || [];
+      const updatedInvestments = yearInvestments.map(inv =>
+        inv === investment
+          ? {
+            ...inv,
+            isLiquidated: false,
+            liquidationYear: undefined,
+            liquidatedAmount: undefined,
+            penaltyApplied: undefined
+          }
+          : inv
+      );
+
+      return {
+        ...prev,
+        [startYear]: updatedInvestments
+      };
+    });
+  }, [setSimulationInvestments]);
 
   const handleOptimizeFees = useCallback(async () => {
     if (!simulationParams || !expenses) return;
@@ -680,6 +673,7 @@ export default function SimulationPage() {
           onYearAdjustment={handleYearAdjustment}
           onAddInvestment={handleAddInvestment}
           onLiquidateInvestment={handleLiquidateInvestment}
+          onUnliquidateInvestment={handleUnliquidateInvestment}
           availableYears={projections.map(p => p.year)}
           onYearChange={(year) => {
             const newYearProjection = projections.find(p => p.year === year);

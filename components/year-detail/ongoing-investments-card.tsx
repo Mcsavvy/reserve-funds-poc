@@ -80,7 +80,7 @@ export function OngoingInvestmentsCard({ adjustedProjection, onLiquidateInvestme
                     <Badge variant="secondary" className="text-xs">
                       {ongoing.investment.investmentType}
                     </Badge>
-                    {canLiquidateEarly && onLiquidateInvestment && (
+                    {canLiquidateEarly && !ongoing.investment.isLiquidated && onLiquidateInvestment && (
                       <Button
                         size="sm"
                         variant="outline"

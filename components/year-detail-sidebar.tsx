@@ -57,6 +57,7 @@ interface YearDetailSidebarProps {
   onYearAdjustment: (year: number, adjustments: YearAdjustmentData) => void;
   onAddInvestment?: (investment: SimulationInvestment) => void;
   onLiquidateInvestment?: (investment: SimulationInvestment, startYear: number, currentYear: number) => void;
+  onUnliquidateInvestment?: (investment: SimulationInvestment, startYear: number) => void;
   availableYears: number[];
   onYearChange: (year: number) => void;
 }
@@ -69,6 +70,7 @@ export function YearDetailSidebar({
   onYearAdjustment,
   onAddInvestment,
   onLiquidateInvestment,
+  onUnliquidateInvestment,
   availableYears,
   onYearChange
 }: YearDetailSidebarProps) {
@@ -158,7 +160,8 @@ export function YearDetailSidebar({
               onAddInvestment={onAddInvestment ? () => setIsAddInvestmentOpen(true) : undefined}
             />
             <InvestmentLiquidationsCard 
-              adjustedProjection={adjustedProjection} 
+              adjustedProjection={adjustedProjection}
+              onUnliquidateInvestment={onUnliquidateInvestment}
             />
             <OngoingInvestmentsCard 
               adjustedProjection={adjustedProjection}
