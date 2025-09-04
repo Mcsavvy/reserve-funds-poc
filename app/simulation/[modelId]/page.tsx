@@ -212,7 +212,7 @@ export default function SimulationPage() {
       // Update the projection with investment details
       updatedProjections[index] = {
         ...projection,
-        investmentLiquidations: yearInvestmentLiquidations,
+        investmentLiquidations: yearInvestmentLiquidations as any,
         simulationInvestmentDetails: {
           ongoingInvestments: ongoingInvestments.filter(o => 
             o.startYear <= year && 
@@ -247,7 +247,7 @@ export default function SimulationPage() {
     }
 
     return updatedProjections;
-  }, [simulationInvestments, yearAdjustments]);
+  }, [yearAdjustments]);
 
   // Generate projections when params, expenses, investments, or simulation investments change
   const projections = useMemo(() => {
@@ -256,7 +256,7 @@ export default function SimulationPage() {
 
     // Apply year adjustments and recalculate subsequent years
     if (Object.keys(yearAdjustments).length > 0) {
-      baseProjections = applyYearAdjustments(baseProjections, yearAdjustments);
+      baseProjections = applyYearAdjustments(baseProjections, yearAdjustments, simulationParams);
     }
 
     // Apply simulation investments to projections
@@ -265,7 +265,7 @@ export default function SimulationPage() {
     }
 
     return baseProjections;
-  }, [simulationParams, expenses, investments, yearAdjustments, simulationInvestments]);
+  }, [simulationParams, expenses, investments, yearAdjustments, simulationInvestments, applySimulationInvestments]);
 
   // Calculate stats
   const stats = useMemo(() => {
@@ -491,14 +491,16 @@ export default function SimulationPage() {
 
     setIsOptimizing(true);
     try {
-      const result = optimizeCollectionFees(simulationParams, expenses);
+      // Use clean simulation params without any existing adjustments
+      const cleanParams = { ...simulationParams };
+      const result = optimizeCollectionFees(cleanParams, expenses);
       setOptimizationResult(result);
     } catch (error) {
       console.error('Optimization failed:', error);
     } finally {
       setIsOptimizing(false);
     }
-  }, [setIsOptimizing, setOptimizationResult]);
+  }, [simulationParams, expenses, setIsOptimizing, setOptimizationResult]);
 
   const handleApplyOptimization = useCallback((optimizedParams: SimulationParams) => {
     if (!optimizationResult) return;
@@ -523,7 +525,7 @@ export default function SimulationPage() {
     }
 
     setOptimizationResult(null);
-  }, [setSimulationParams, setYearAdjustments, setOptimizationResult]);
+  }, [optimizationResult, simulationParams?.housingUnits, setSimulationParams, setYearAdjustments, setOptimizationResult]);
 
   // Removed handleSaveModel - models cannot be updated from simulation
 
@@ -534,7 +536,7 @@ export default function SimulationPage() {
     setYearAdjustments({}); // Clear any year-specific adjustments
     setSimulationInvestments({}); // Clear simulation investments
     setCurrentVersionId(undefined); // Clear current version
-  }, [setSimulationParams, setYearAdjustments, setSimulationInvestments]);
+  }, [model, setSimulationParams, setYearAdjustments, setSimulationInvestments]);
 
   // Version management handlers
   const handleSaveVersion = useCallback(async (name: string, description?: string) => {

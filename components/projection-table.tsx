@@ -38,9 +38,15 @@ const columnHelper = createColumnHelper<YearProjection>();
 function projectionsToCSV(projections: YearProjection[], model: Model | null, simulationInvestments?: Record<number, any[]>): string {
   const headers = ['Year', 'Opening Balance', 'Collections', 'Expenses', 'Safety Net', 'Loans Taken', 'Loan Payments', 'Available to Invest', 'Invested Amount', 'Investment Liquidations', 'Projected Net Earnings', 'Loss in Purchase Power', 'Closing Balance'];
   const rows = projections.map(p => {
-    const availableToInvest = p.openingBalance + p.collections - p.expenses - p.safetyNet - (p.loanPayments || 0);
-    const yearInvestments = simulationInvestments?.[p.year] || [];
-    const totalInvested = yearInvestments.reduce((sum, inv) => sum + (inv.amountInvested || 0), 0);
+    const year = p.year;
+    const yearInvestments = simulationInvestments?.[year] || [];
+    const totalInvested = yearInvestments.reduce((sum, inv) => sum + inv.amountInvested, 0);
+    const availableToInvest = Math.max(0, p.closingBalance - totalInvested);
+    const liquidationsTotal = Array.isArray(p.investmentLiquidations) 
+      ? p.investmentLiquidations.reduce((sum, liquidation) => sum + liquidation.liquidatedAmount, 0)
+      : (p.investmentLiquidations || 0);
+    const projectedNetEarnings = model ? (p.openingBalance * model.bankInterestRate / 100) : 0;
+    const lossInPurchasePower = model ? (p.openingBalance * model.inflationRate / 100) : 0;
     
     return [
       p.year,
@@ -52,9 +58,9 @@ function projectionsToCSV(projections: YearProjection[], model: Model | null, si
       p.loanPayments || 0,
       availableToInvest,
       totalInvested,
-      p.investmentLiquidations.reduce((sum, liquidation) => sum + liquidation.liquidatedAmount, 0),
-      model ? (p.openingBalance * model.bankInterestRate / 100) : 0,
-      model ? (p.openingBalance * model.inflationRate / 100) : 0,
+      liquidationsTotal,
+      projectedNetEarnings,
+      lossInPurchasePower,
       p.closingBalance
     ];
   });
@@ -70,9 +76,15 @@ function projectionsToCSV(projections: YearProjection[], model: Model | null, si
 async function copyTableToClipboard(projections: YearProjection[], model: Model | null, simulationInvestments?: Record<number, any[]>): Promise<void> {
   const headers = ['Year', 'Opening Balance', 'Collections', 'Expenses', 'Safety Net', 'Loans Taken', 'Loan Payments', 'Available to Invest', 'Invested Amount', 'Investment Liquidations', 'Projected Net Earnings', 'Loss in Purchase Power', 'Closing Balance'];
   const rows = projections.map(p => {
-    const availableToInvest = p.openingBalance + p.collections - p.expenses - p.safetyNet - (p.loanPayments || 0);
-    const yearInvestments = simulationInvestments?.[p.year] || [];
-    const totalInvested = yearInvestments.reduce((sum, inv) => sum + (inv.amountInvested || 0), 0);
+    const year = p.year;
+    const yearInvestments = simulationInvestments?.[year] || [];
+    const totalInvested = yearInvestments.reduce((sum, inv) => sum + inv.amountInvested, 0);
+    const availableToInvest = Math.max(0, p.closingBalance - totalInvested);
+    const liquidationsTotal = Array.isArray(p.investmentLiquidations) 
+      ? p.investmentLiquidations.reduce((sum, liquidation) => sum + liquidation.liquidatedAmount, 0)
+      : (p.investmentLiquidations || 0);
+    const projectedNetEarnings = model ? (p.openingBalance * model.bankInterestRate / 100) : 0;
+    const lossInPurchasePower = model ? (p.openingBalance * model.inflationRate / 100) : 0;
     
     return [
       p.year,
@@ -84,9 +96,9 @@ async function copyTableToClipboard(projections: YearProjection[], model: Model 
       formatCurrency(p.loanPayments || 0),
       formatCurrency(availableToInvest),
       formatCurrency(totalInvested),
-      formatCurrency(p.investmentLiquidations.reduce((sum, liquidation) => sum + liquidation.liquidatedAmount, 0)),
-      formatCurrency(model ? (p.openingBalance * model.bankInterestRate / 100) : 0),
-      formatCurrency(model ? (p.openingBalance * model.inflationRate / 100) : 0),
+      formatCurrency(liquidationsTotal),
+      formatCurrency(projectedNetEarnings),
+      formatCurrency(lossInPurchasePower),
       formatCurrency(p.closingBalance)
     ];
   });
@@ -250,12 +262,10 @@ export function ProjectionTable({ projections, onYearClick, model, simulationInv
       id: 'availableToInvest',
       header: 'Available to Invest',
       cell: (info) => {
-        const projection = info.row.original;
-        const availableToInvest = projection.openingBalance + 
-          projection.collections - 
-          projection.expenses - 
-          projection.safetyNet - 
-          (projection.loanPayments || 0);
+        const year = info.row.original.year;
+        const yearInvestments = simulationInvestments?.[year] || [];
+        const totalInvested = yearInvestments.reduce((sum, inv) => sum + inv.amountInvested, 0);
+        const availableToInvest = Math.max(0, info.row.original.closingBalance - totalInvested);
         
         return (
           <div className="space-y-1">
@@ -281,17 +291,17 @@ export function ProjectionTable({ projections, onYearClick, model, simulationInv
       cell: (info) => {
         const year = info.row.original.year;
         const yearInvestments = simulationInvestments?.[year] || [];
-        const totalInvested = yearInvestments.reduce((sum, inv) => sum + (inv.amountInvested || 0), 0);
+        const investedAmount = yearInvestments.reduce((sum, inv) => sum + inv.amountInvested, 0);
         
         return (
           <div className="space-y-1">
             <div className={cn(
               "font-medium",
-              totalInvested > 0 ? "text-blue-600" : "text-gray-500"
+              investedAmount > 0 ? "text-blue-600" : "text-gray-500"
             )}>
-              {formatCurrency(totalInvested)}
+              {formatCurrency(investedAmount)}
             </div>
-            {totalInvested > 0 && (
+            {investedAmount > 0 && (
               <Badge variant="secondary" className="text-xs">
                 {yearInvestments.length} investment{yearInvestments.length > 1 ? 's' : ''}
               </Badge>
@@ -306,16 +316,19 @@ export function ProjectionTable({ projections, onYearClick, model, simulationInv
       cell: (info) => {
         const value = info.getValue() || [];
         const investmentCount = info.row.original.investmentDetails?.length || 0;
+        const liquidationsTotal = Array.isArray(value) 
+          ? value.reduce((sum, liquidation) => sum + liquidation.liquidatedAmount, 0)
+          : (value || 0);
         
         return (
           <div className="space-y-1">
             <div className={cn(
               "font-medium",
-              value.length > 0 ? "text-green-600" : "text-gray-500"
+              liquidationsTotal > 0 ? "text-green-600" : "text-gray-500"
             )}>
-              {formatCurrency(value.reduce((sum, liquidation) => sum + liquidation.liquidatedAmount, 0))}
+              {formatCurrency(liquidationsTotal)}
             </div>
-            {value.length > 0 && (
+            {liquidationsTotal > 0 && (
               <Badge variant="outline" className="text-xs text-green-600 border-green-600">
                 {investmentCount > 0 ? `${investmentCount} matured` : 'Liquidated'}
               </Badge>
@@ -329,8 +342,7 @@ export function ProjectionTable({ projections, onYearClick, model, simulationInv
       id: 'projectedNetEarnings',
       header: 'Projected Net Earnings',
       cell: (info) => {
-        const openingBalance = info.row.original.openingBalance;
-        const projectedEarnings = model ? (openingBalance * model.bankInterestRate / 100) : 0;
+        const projectedEarnings = model ? (info.row.original.openingBalance * model.bankInterestRate / 100) : 0;
         return (
           <div className="text-emerald-600 font-medium">
             {formatCurrency(projectedEarnings)}
@@ -450,7 +462,8 @@ export function ProjectionTable({ projections, onYearClick, model, simulationInv
               const hasExpenses = projection.expenseDetails.length > 0;
               const hasLoans = (projection.loansTaken || 0) > 0 || (projection.loanPayments || 0) > 0;
               const hasInvestments = (simulationInvestments?.[projection.year]?.length || 0) > 0;
-              const hasLiquidations = (projection.investmentLiquidations.length || 0) > 0;
+              const liquidations = Array.isArray(projection.investmentLiquidations) ? projection.investmentLiquidations : [];
+              const hasLiquidations = liquidations.length > 0;
               
               return (
                 <TableRow
