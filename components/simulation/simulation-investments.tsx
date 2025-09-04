@@ -45,7 +45,7 @@ export function SimulationInvestments({
       <CardHeader>
         <CardTitle>Simulation Investments</CardTitle>
         <p className="text-sm text-muted-foreground">
-          Investments added during simulation (not persisted to database)
+          Investments added during simulation (not persisted to database). Use the year detail sidebar to liquidate investments.
         </p>
       </CardHeader>
       <CardContent>
@@ -86,16 +86,10 @@ export function SimulationInvestments({
                           </Badge>
                           {!isLiquidated && (
                             <>
-                              {canLiquidateEarly && onLiquidateInvestment && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => onLiquidateInvestment(investment, parseInt(yearStr), currentYear!)}
-                                  className="h-6 w-6 p-0 text-green-600 hover:text-green-700"
-                                  title="Liquidate Early"
-                                >
-                                  <TrendingUp className="h-3 w-3" />
-                                </Button>
+                              {canLiquidateEarly && (
+                                <Badge variant="outline" className="text-xs text-green-600">
+                                  Can Liquidate
+                                </Badge>
                               )}
                               <Button
                                 variant="ghost"

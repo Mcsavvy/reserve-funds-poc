@@ -1,17 +1,20 @@
 'use client';
 
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { TrendingUp } from 'lucide-react';
+import { TrendingUp, Undo2 } from 'lucide-react';
 import { formatCurrency } from '@/lib/db-utils';
 import { YearProjection } from '@/lib/simulation';
+import { SimulationInvestment } from '@/components/add-simulation-investment-dialog';
 
 interface InvestmentLiquidationsCardProps {
   adjustedProjection: YearProjection;
+  onUnliquidateInvestment?: (investment: SimulationInvestment, startYear: number) => void;
 }
 
-export function InvestmentLiquidationsCard({ adjustedProjection }: InvestmentLiquidationsCardProps) {
-  if (!adjustedProjection.investmentLiquidations || adjustedProjection.investmentLiquidations === 0) {
+export function InvestmentLiquidationsCard({ adjustedProjection, onUnliquidateInvestment }: InvestmentLiquidationsCardProps) {
+  if (!adjustedProjection.investmentLiquidations || adjustedProjection.investmentLiquidations.length === 0) {
     return null;
   }
 
@@ -26,23 +29,47 @@ export function InvestmentLiquidationsCard({ adjustedProjection }: InvestmentLiq
       <CardContent className="space-y-4">
         <div className="text-center bg-green-50 rounded-lg p-3">
           <p className="text-xl font-bold text-green-600">
-            {formatCurrency(adjustedProjection.investmentLiquidations || 0)}
+            {formatCurrency(
+              adjustedProjection.investmentLiquidations.reduce((sum, liquidation) => sum + liquidation.liquidatedAmount, 0)
+            )}
           </p>
           <p className="text-sm text-green-600 mt-1">
             Total liquidated this year
           </p>
         </div>
         
-        {adjustedProjection.investmentDetails && adjustedProjection.investmentDetails.length > 0 && (
+        {adjustedProjection.investmentLiquidations && adjustedProjection.investmentLiquidations.length > 0 && (
           <div className="space-y-3">
-            <h4 className="font-medium text-green-700">Investment Details</h4>
-            {adjustedProjection.investmentDetails.map((liquidation, index) => (
+            <h4 className="font-medium text-green-700">Liquidation Details</h4>
+            {adjustedProjection.investmentLiquidations.map((liquidation, index) => (
               <div key={index} className="border rounded-lg p-3 bg-green-50">
                 <div className="flex items-center justify-between mb-2">
-                  <h5 className="font-medium">{liquidation.investment.strategyName || `${liquidation.investment.investmentType} Investment`}</h5>
-                  <Badge variant="secondary" className="text-xs">
-                    {liquidation.investment.investmentType}
-                  </Badge>
+                  <h5 className="font-medium">{liquidation.investmentName}</h5>
+                  <div className="flex items-center space-x-2">
+                    <Badge variant={liquidation.isEarlyLiquidation ? "destructive" : "secondary"} className="text-xs">
+                      {liquidation.isEarlyLiquidation ? "Early Liquidation" : "Matured"}
+                    </Badge>
+                    {liquidation.isEarlyLiquidation && onUnliquidateInvestment && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          // Find the original investment from liquidatedInvestments
+                          const liquidatedInvestment = adjustedProjection.simulationInvestmentDetails?.liquidatedInvestments.find(
+                            inv => inv.investment.id === liquidation.investmentId
+                          );
+                          if (liquidatedInvestment) {
+                            onUnliquidateInvestment(liquidatedInvestment.investment, liquidation.startYear);
+                          }
+                        }}
+                        className="h-6 px-2 text-xs text-orange-600 border-orange-300 hover:bg-orange-50"
+                        title="Undo Early Liquidation"
+                      >
+                        <Undo2 className="h-3 w-3 mr-1" />
+                        Unliquidate
+                      </Button>
+                    )}
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <div>
@@ -61,13 +88,20 @@ export function InvestmentLiquidationsCard({ adjustedProjection }: InvestmentLiq
                     <p className="text-muted-foreground">Years Held</p>
                     <p className="font-medium">{liquidation.yearsHeld} years</p>
                   </div>
+                  {liquidation.penaltyApplied > 0 && (
+                    <div>
+                      <p className="text-muted-foreground">Penalty Applied</p>
+                      <p className="font-medium text-red-600">{formatCurrency(liquidation.penaltyApplied)}</p>
+                    </div>
+                  )}
                 </div>
                 <div className="mt-2 p-2 bg-green-100 rounded text-xs">
-                  <p className="text-green-700 font-medium">Investment Matured</p>
+                  <p className="text-green-700 font-medium">
+                    {liquidation.isEarlyLiquidation ? "Early Liquidation" : "Investment Matured"}
+                  </p>
                   <p className="text-green-600">
-                    Started: {liquidation.investment.yearStarted} • 
-                    Rate: {liquidation.investment.annualInterestRate}% • 
-                    Terms: {liquidation.investment.terms} years
+                    Started: {liquidation.startYear} • 
+                    Liquidated: {liquidation.liquidationYear}
                   </p>
                 </div>
               </div>

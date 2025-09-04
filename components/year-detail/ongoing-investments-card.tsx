@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { TrendingUp } from 'lucide-react';
 import { formatCurrency } from '@/lib/db-utils';
-import { YearProjection, SimulationInvestment } from '@/lib/simulation';
+import { YearProjection } from '@/lib/simulation';
+import { SimulationInvestment } from "@/components/add-simulation-investment-dialog"
 
 interface OngoingInvestmentsCardProps {
   adjustedProjection: YearProjection;
@@ -79,7 +80,7 @@ export function OngoingInvestmentsCard({ adjustedProjection, onLiquidateInvestme
                     <Badge variant="secondary" className="text-xs">
                       {ongoing.investment.investmentType}
                     </Badge>
-                    {canLiquidateEarly && onLiquidateInvestment && (
+                    {canLiquidateEarly && !ongoing.investment.isLiquidated && onLiquidateInvestment && (
                       <Button
                         size="sm"
                         variant="outline"

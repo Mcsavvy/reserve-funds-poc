@@ -59,10 +59,24 @@ export const InvestmentSchema = z.object({
   updatedAt: z.string().max(50, 'Updated date must be 50 characters or less'),
 });
 
+// Zod schema for SimulationVersion
+export const SimulationVersionSchema = z.object({
+  id: z.string().max(100, 'ID must be 100 characters or less'),
+  modelId: z.string().max(100, 'Model ID must be 100 characters or less'),
+  name: z.string().min(1, 'Name is required').max(200, 'Name must be 200 characters or less'),
+  description: z.string().max(500, 'Description must be 500 characters or less').optional(),
+  modelSnapshot: z.any(), // Full model state at time of version creation
+  yearAdjustments: z.record(z.string(), z.any()).optional(), // Year-specific adjustments
+  simulationInvestments: z.record(z.string(), z.array(z.any())).optional(), // Simulation investments by year
+  createdAt: z.string().max(50, 'Created date must be 50 characters or less'),
+  createdBy: z.string().max(100, 'Created by must be 100 characters or less').optional(),
+});
+
 // TypeScript types derived from Zod schemas
 export type Model = z.infer<typeof ModelSchema>;
 export type Expense = z.infer<typeof ExpenseSchema>;
 export type Investment = z.infer<typeof InvestmentSchema>;
+export type SimulationVersion = z.infer<typeof SimulationVersionSchema>;
 
 // RxDB schema for Model collection
 export const modelRxSchema: RxJsonSchema<Model> = {
@@ -314,4 +328,65 @@ export const investmentRxSchema: RxJsonSchema<Investment> = {
     'updatedAt',
   ],
   indexes: ['modelId', 'investmentType', 'yearStarted', 'createdAt'],
+};
+
+// RxDB schema for SimulationVersion collection
+export const simulationVersionRxSchema: RxJsonSchema<SimulationVersion> = {
+  version: 0,
+  primaryKey: 'id',
+  type: 'object',
+  properties: {
+    id: {
+      type: 'string',
+      maxLength: 100,
+    },
+    modelId: {
+      type: 'string',
+      ref: 'models',
+      maxLength: 100,
+    },
+    name: {
+      type: 'string',
+      maxLength: 200,
+    },
+    description: {
+      type: 'string',
+      maxLength: 500,
+    },
+    modelSnapshot: {
+      type: 'object',
+      additionalProperties: true,
+    },
+    yearAdjustments: {
+      type: 'object',
+      additionalProperties: true,
+    },
+    simulationInvestments: {
+      type: 'object',
+      additionalProperties: {
+        type: 'array',
+        items: {
+          type: 'object',
+          additionalProperties: true,
+        },
+      },
+    },
+    createdAt: {
+      type: 'string',
+      format: 'date-time',
+      maxLength: 50,
+    },
+    createdBy: {
+      type: 'string',
+      maxLength: 100,
+    },
+  },
+  required: [
+    'id',
+    'modelId',
+    'name',
+    'modelSnapshot',
+    'createdAt',
+  ],
+  indexes: ['modelId', 'name', 'createdAt'],
 };

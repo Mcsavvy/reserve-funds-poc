@@ -11,7 +11,7 @@ export interface YearProjection {
   loanPayments: number;
   availableToInvest: number;
   investedAmount: number;
-  investmentLiquidations: number;
+  investmentLiquidations: LiquidationRecord[];
   projectedNetEarnings: number;
   closingBalance: number;
   expenseDetails: ExpenseOccurrence[];
@@ -34,6 +34,19 @@ export interface YearProjection {
     }>;
     totalInterest: number;
   };
+}
+
+export interface LiquidationRecord {
+  investmentId: string;
+  investmentName: string;
+  startYear: number;
+  liquidationYear: number;
+  originalAmount: number;
+  liquidatedAmount: number;
+  yearsHeld: number;
+  interestEarned: number;
+  penaltyApplied: number;
+  isEarlyLiquidation: boolean;
 }
 
 export interface ExpenseOccurrence {
@@ -486,6 +499,20 @@ export function generateProjections(
     // Calculate total investment liquidations this year
     const totalInvestmentLiquidations = investmentDetails.reduce((sum, detail) => sum + detail.liquidatedAmount, 0);
     
+    // Convert to LiquidationRecord format
+    const liquidationRecords: LiquidationRecord[] = investmentDetails.map(detail => ({
+      investmentId: detail.investment.id,
+      investmentName: `${detail.investment.investmentType} Investment`,
+      startYear: detail.investment.yearStarted,
+      liquidationYear: year,
+      originalAmount: detail.originalAmount,
+      liquidatedAmount: detail.liquidatedAmount,
+      yearsHeld: detail.yearsHeld,
+      interestEarned: detail.interestEarned,
+      penaltyApplied: 0,
+      isEarlyLiquidation: false
+    }));
+    
     // Add new loans to active loans tracking
     if (totalLoansTaken > 0) {
       const loanId = `${year}-loan`;
@@ -746,7 +773,7 @@ export function generateProjections(
       loanPayments: totalLoanPayments,
       availableToInvest,
       investedAmount,
-      investmentLiquidations: totalInvestmentLiquidations,
+      investmentLiquidations: liquidationRecords,
       projectedNetEarnings,
       closingBalance,
       expenseDetails,
@@ -800,10 +827,13 @@ export function generateProjections(
           
           // Recalculate available to invest
           const lossInPurchasePower = projection.openingBalance > 0 ? projection.openingBalance * (params.inflationRate / 100) : 0;
-          projection.availableToInvest = Math.max(0, projection.openingBalance + projection.collections + projection.investmentLiquidations - projection.expenses - projection.safetyNet - projection.loanPayments - lossInPurchasePower);
+          const liquidationsTotal = Array.isArray(projection.investmentLiquidations) 
+            ? projection.investmentLiquidations.reduce((sum: number, liquidation: any) => sum + (liquidation.liquidatedAmount || 0), 0)
+            : (projection.investmentLiquidations || 0);
+          projection.availableToInvest = Math.max(0, projection.openingBalance + projection.collections + liquidationsTotal - projection.expenses - projection.safetyNet - projection.loanPayments - lossInPurchasePower);
           
           // Recalculate closing balance
-          projection.closingBalance = projection.openingBalance + projection.collections + projection.investmentLiquidations - projection.expenses - projection.safetyNet - projection.loanPayments - lossInPurchasePower;
+          projection.closingBalance = projection.openingBalance + projection.collections + liquidationsTotal - projection.expenses - projection.safetyNet - projection.loanPayments - lossInPurchasePower;
           
           // Check if this year still has a deficit
           if (projection.closingBalance < 0) {
@@ -813,8 +843,11 @@ export function generateProjections(
             projection.collections += extraCollections;
             
             // Recalculate with extra collections
-            projection.availableToInvest = Math.max(0, projection.openingBalance + projection.collections + projection.investmentLiquidations - projection.expenses - projection.safetyNet - projection.loanPayments - lossInPurchasePower);
-            projection.closingBalance = projection.openingBalance + projection.collections + projection.investmentLiquidations - projection.expenses - projection.safetyNet - projection.loanPayments - lossInPurchasePower;
+            const newLiquidationsTotal = Array.isArray(projection.investmentLiquidations) 
+              ? projection.investmentLiquidations.reduce((sum: number, liquidation: any) => sum + (liquidation.liquidatedAmount || 0), 0)
+              : (projection.investmentLiquidations || 0);
+            projection.availableToInvest = Math.max(0, projection.openingBalance + projection.collections + newLiquidationsTotal - projection.expenses - projection.safetyNet - projection.loanPayments - lossInPurchasePower);
+            projection.closingBalance = projection.openingBalance + projection.collections + newLiquidationsTotal - projection.expenses - projection.safetyNet - projection.loanPayments - lossInPurchasePower;
           }
           
           // Update current balance for next iteration
@@ -855,8 +888,11 @@ export function generateProjections(
           
           // Recalculate derived values
           const lossInPurchasePower = projection.openingBalance > 0 ? projection.openingBalance * (params.inflationRate / 100) : 0;
-          projection.availableToInvest = Math.max(0, projection.openingBalance + projection.collections + projection.investmentLiquidations - projection.expenses - projection.safetyNet - projection.loanPayments - lossInPurchasePower);
-          projection.closingBalance = projection.openingBalance + projection.collections + projection.investmentLiquidations - projection.expenses - projection.safetyNet - projection.loanPayments - lossInPurchasePower;
+          const reducedLiquidationsTotal = Array.isArray(projection.investmentLiquidations) 
+            ? projection.investmentLiquidations.reduce((sum: number, liquidation: any) => sum + (liquidation.liquidatedAmount || 0), 0)
+            : (projection.investmentLiquidations || 0);
+          projection.availableToInvest = Math.max(0, projection.openingBalance + projection.collections + reducedLiquidationsTotal - projection.expenses - projection.safetyNet - projection.loanPayments - lossInPurchasePower);
+          projection.closingBalance = projection.openingBalance + projection.collections + reducedLiquidationsTotal - projection.expenses - projection.safetyNet - projection.loanPayments - lossInPurchasePower;
         }
         
         currentBalance = projection.closingBalance;
@@ -877,11 +913,11 @@ export function applyYearAdjustments(
     collections?: number; 
     expenses?: number; 
     safetyNet?: number;
-    loansTaken?: number;
-    loanPayments?: number;
+    loansTaken?: number; 
+    loanPayments?: number; 
     availableToInvest?: number;
     investedAmount?: number;
-    investmentLiquidations?: number;
+    investmentLiquidations?: LiquidationRecord[];
     projectedNetEarnings?: number;
   }>,
   params: SimulationParams
@@ -913,13 +949,25 @@ export function applyYearAdjustments(
       projectedNetEarnings: adjustment.projectedNetEarnings ?? projection.projectedNetEarnings,
     };
     
+    // Calculate total investment liquidations for closing balance
+    let totalInvestmentLiquidations = 0;
+    if (Array.isArray(adjustedProjection.investmentLiquidations)) {
+      // Handle array of liquidation objects
+      totalInvestmentLiquidations = adjustedProjection.investmentLiquidations.reduce((sum: number, liquidation: any) => {
+        return sum + (liquidation.liquidatedAmount || 0);
+      }, 0);
+    } else {
+      // Handle legacy number format
+      totalInvestmentLiquidations = adjustedProjection.investmentLiquidations as any || 0;
+    }
+    
     // Recalculate closing balance with all components (loans do NOT add to balance)
     const lossInPurchasePower = adjustedProjection.openingBalance > 0 ? 
       adjustedProjection.openingBalance * (params.inflationRate / 100) : 0;
     adjustedProjection.closingBalance = 
       adjustedProjection.openingBalance + 
       adjustedProjection.collections + 
-      adjustedProjection.investmentLiquidations - 
+      totalInvestmentLiquidations - 
       adjustedProjection.expenses - 
       adjustedProjection.safetyNet - 
       adjustedProjection.loanPayments - 
@@ -932,12 +980,24 @@ export function applyYearAdjustments(
       const prevClosingBalance = adjustedProjections[i - 1].closingBalance;
       const lossInPurchasePower = prevClosingBalance > 0 ? 
         prevClosingBalance * (params.inflationRate / 100) : 0;
+      
+      // Calculate investment liquidations for this year
+      let yearInvestmentLiquidations = 0;
+      const yearLiquidations = adjustedProjections[i].investmentLiquidations;
+      if (Array.isArray(yearLiquidations)) {
+        yearInvestmentLiquidations = yearLiquidations.reduce((sum: number, liquidation: any) => {
+          return sum + (liquidation.liquidatedAmount || 0);
+        }, 0);
+      } else {
+        yearInvestmentLiquidations = yearLiquidations as any || 0;
+      }
+      
       adjustedProjections[i] = {
         ...adjustedProjections[i],
         openingBalance: prevClosingBalance,
         closingBalance: prevClosingBalance + 
           adjustedProjections[i].collections + 
-          adjustedProjections[i].investmentLiquidations - 
+          yearInvestmentLiquidations - 
           adjustedProjections[i].expenses - 
           adjustedProjections[i].safetyNet - 
           adjustedProjections[i].loanPayments - 
@@ -1026,10 +1086,13 @@ function applyNormalizationToProjections(projections: YearProjection[], params: 
         
         // Recalculate available to invest
         const lossInPurchasePower = projection.openingBalance > 0 ? projection.openingBalance * (params.inflationRate / 100) : 0;
-        projection.availableToInvest = Math.max(0, projection.openingBalance + projection.collections + projection.investmentLiquidations - projection.expenses - projection.safetyNet - projection.loanPayments - lossInPurchasePower);
+        const projLiquidationsTotal = Array.isArray(projection.investmentLiquidations) 
+          ? projection.investmentLiquidations.reduce((sum: number, liquidation: any) => sum + (liquidation.liquidatedAmount || 0), 0)
+          : (projection.investmentLiquidations || 0);
+        projection.availableToInvest = Math.max(0, projection.openingBalance + projection.collections + projLiquidationsTotal - projection.expenses - projection.safetyNet - projection.loanPayments - lossInPurchasePower);
         
         // Recalculate closing balance
-        projection.closingBalance = projection.openingBalance + projection.collections + projection.investmentLiquidations - projection.expenses - projection.safetyNet - projection.loanPayments - lossInPurchasePower;
+        projection.closingBalance = projection.openingBalance + projection.collections + projLiquidationsTotal - projection.expenses - projection.safetyNet - projection.loanPayments - lossInPurchasePower;
         
         // Check if this year still has a deficit
         if (projection.closingBalance < 0) {
@@ -1039,8 +1102,11 @@ function applyNormalizationToProjections(projections: YearProjection[], params: 
           projection.collections += extraCollections;
           
           // Recalculate with extra collections
-          projection.availableToInvest = Math.max(0, projection.openingBalance + projection.collections + projection.investmentLiquidations - projection.expenses - projection.safetyNet - projection.loanPayments - lossInPurchasePower);
-          projection.closingBalance = projection.openingBalance + projection.collections + projection.investmentLiquidations - projection.expenses - projection.safetyNet - projection.loanPayments - lossInPurchasePower;
+          const finalLiquidationsTotal = Array.isArray(projection.investmentLiquidations) 
+            ? projection.investmentLiquidations.reduce((sum: number, liquidation: any) => sum + (liquidation.liquidatedAmount || 0), 0)
+            : (projection.investmentLiquidations || 0);
+          projection.availableToInvest = Math.max(0, projection.openingBalance + projection.collections + finalLiquidationsTotal - projection.expenses - projection.safetyNet - projection.loanPayments - lossInPurchasePower);
+          projection.closingBalance = projection.openingBalance + projection.collections + finalLiquidationsTotal - projection.expenses - projection.safetyNet - projection.loanPayments - lossInPurchasePower;
         }
         
         // Update current balance for next iteration
@@ -1082,8 +1148,11 @@ function applyNormalizationToProjections(projections: YearProjection[], params: 
           // Recalculate closing balance
           const lossInPurchasePower = projection.openingBalance > 0 ? 
             projection.openingBalance * (params.inflationRate / 100) : 0;
+          const lastLiquidationsTotal = Array.isArray(projection.investmentLiquidations) 
+            ? projection.investmentLiquidations.reduce((sum: number, liquidation: any) => sum + (liquidation.liquidatedAmount || 0), 0)
+            : (projection.investmentLiquidations || 0);
           projection.closingBalance = projection.openingBalance + projection.collections + 
-            projection.investmentLiquidations - projection.expenses - 
+            lastLiquidationsTotal - projection.expenses - 
             projection.safetyNet - projection.loanPayments - lossInPurchasePower;
           
           projection.availableToInvest = Math.max(0, projection.closingBalance);
@@ -1137,10 +1206,13 @@ export function optimizeCollectionFees(
       // Recalculate balances (corrected - loans do NOT add to balance)
       if (i === 0) {
         const lossInPurchasePower = params.startingAmount * (params.inflationRate / 100);
+        const startingOptimLiquidationsTotal: number = Array.isArray(normalizedProjections[i].investmentLiquidations) 
+          ? normalizedProjections[i].investmentLiquidations.reduce((sum: number, liquidation: any) => sum + (liquidation.liquidatedAmount || 0), 0)
+          : 0;
         normalizedProjections[i].closingBalance = 
           params.startingAmount + 
           normalizedProjections[i].collections + 
-          (normalizedProjections[i].investmentLiquidations || 0) - 
+          startingOptimLiquidationsTotal - 
           normalizedProjections[i].expenses - 
           normalizedProjections[i].safetyNet - 
           (normalizedProjections[i].loanPayments || 0) - 
@@ -1149,10 +1221,13 @@ export function optimizeCollectionFees(
         normalizedProjections[i].openingBalance = normalizedProjections[i - 1].closingBalance;
         const lossInPurchasePower = normalizedProjections[i].openingBalance > 0 ? 
           normalizedProjections[i].openingBalance * (params.inflationRate / 100) : 0;
+        const optimLiquidationsTotal: number = Array.isArray(normalizedProjections[i].investmentLiquidations) 
+          ? normalizedProjections[i].investmentLiquidations.reduce((sum: number, liquidation: any) => sum + (liquidation.liquidatedAmount || 0), 0)
+          : 0;
         normalizedProjections[i].closingBalance = 
           normalizedProjections[i].openingBalance + 
           normalizedProjections[i].collections + 
-          (normalizedProjections[i].investmentLiquidations || 0) - 
+          optimLiquidationsTotal - 
           normalizedProjections[i].expenses - 
           normalizedProjections[i].safetyNet - 
           (normalizedProjections[i].loanPayments || 0) - 
@@ -1242,9 +1317,12 @@ export function optimizeCollectionFees(
         // Recalculate closing balance
         const lossInPurchasePower = optimizedProjections[i].openingBalance > 0 ? 
           optimizedProjections[i].openingBalance * (params.inflationRate / 100) : 0;
+        const addtnlOptimLiquidationsTotal: number = Array.isArray(optimizedProjections[i].investmentLiquidations) 
+          ? optimizedProjections[i].investmentLiquidations.reduce((sum: number, liquidation: any) => sum + (liquidation.liquidatedAmount || 0), 0)
+          : 0;
         optimizedProjections[i].closingBalance = optimizedProjections[i].openingBalance + 
           optimizedProjections[i].collections + 
-          (optimizedProjections[i].investmentLiquidations || 0) - 
+          addtnlOptimLiquidationsTotal - 
           optimizedProjections[i].expenses - 
           optimizedProjections[i].safetyNet - 
           (optimizedProjections[i].loanPayments || 0) - 
@@ -1322,7 +1400,13 @@ export function getProjectionStats(projections: YearProjection[]) {
   const totalExpenses = projections.reduce((sum, p) => sum + p.expenses, 0);
   const totalLoansTaken = projections.reduce((sum, p) => sum + (p.loansTaken || 0), 0);
   const totalLoanPayments = projections.reduce((sum, p) => sum + (p.loanPayments || 0), 0);
-  const totalInvestmentLiquidations = projections.reduce((sum, p) => sum + (p.investmentLiquidations || 0), 0);
+  const totalInvestmentLiquidations = projections.reduce((sum, p) => {
+    if (Array.isArray(p.investmentLiquidations)) {
+      return sum + p.investmentLiquidations.reduce((yearSum: number, liquidation: any) => yearSum + (liquidation.liquidatedAmount || 0), 0);
+    } else {
+      return sum + (p.investmentLiquidations || 0);
+    }
+  }, 0);
   const negativeBalanceYears = projections.filter(p => p.closingBalance < 0).length;
   
   return {

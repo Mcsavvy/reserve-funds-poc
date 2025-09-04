@@ -110,7 +110,7 @@ export function SimulationTabs({
                   </div>
                   <div className="text-center p-6 bg-green-50 rounded-lg border border-green-200">
                     <div className="text-3xl font-bold text-green-600 mb-2">
-                      {formatCurrency(Math.max(...projections.map(p => p.investmentLiquidations || 0)))}
+                      {formatCurrency(Math.max(...projections.map(p => p.investmentLiquidations.reduce((sum, liquidation) => sum + liquidation.liquidatedAmount, 0))))}
                     </div>
                     <div className="text-sm text-green-700 font-medium">Peak Investment Liquidations</div>
                   </div>
