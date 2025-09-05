@@ -36,7 +36,7 @@ const columnHelper = createColumnHelper<YearProjection>();
 
 // Utility function to convert projections to CSV format
 function projectionsToCSV(projections: YearProjection[], model: Model | null, simulationInvestments?: Record<number, any[]>): string {
-  const headers = ['Year', 'Opening Balance', 'Collections', 'Expenses', 'Safety Net', 'Loans Taken', 'Loan Payments', 'Available to Invest', 'Invested Amount', 'Investment Liquidations', 'Projected Net Earnings', 'Loss in Purchase Power', 'Closing Balance'];
+  const headers = ['Year', 'Opening Balance', 'Collections', 'Total Expenses', 'Out-of-Pocket', 'Safety Net', 'Loans Taken', 'Loan Payments', 'Available to Invest', 'Invested Amount', 'Investment Liquidations', 'Projected Net Earnings', 'Loss in Purchase Power', 'Closing Balance'];
   const rows = projections.map(p => {
     const year = p.year;
     const yearInvestments = simulationInvestments?.[year] || [];
@@ -47,11 +47,13 @@ function projectionsToCSV(projections: YearProjection[], model: Model | null, si
       : (p.investmentLiquidations || 0);
     const projectedNetEarnings = model ? (p.openingBalance * model.bankInterestRate / 100) : 0;
     const lossInPurchasePower = model ? (p.openingBalance * model.inflationRate / 100) : 0;
+    const totalExpenses = p.expenseDetails.reduce((sum, detail) => sum + detail.inflatedCost, 0);
     
     return [
       p.year,
       p.openingBalance,
       p.collections,
+      totalExpenses,
       p.expenses,
       p.safetyNet,
       p.loansTaken || 0,
@@ -74,7 +76,7 @@ function projectionsToCSV(projections: YearProjection[], model: Model | null, si
 
 // Utility function to copy table data to clipboard
 async function copyTableToClipboard(projections: YearProjection[], model: Model | null, simulationInvestments?: Record<number, any[]>): Promise<void> {
-  const headers = ['Year', 'Opening Balance', 'Collections', 'Expenses', 'Safety Net', 'Loans Taken', 'Loan Payments', 'Available to Invest', 'Invested Amount', 'Investment Liquidations', 'Projected Net Earnings', 'Loss in Purchase Power', 'Closing Balance'];
+  const headers = ['Year', 'Opening Balance', 'Collections', 'Total Expenses', 'Out-of-Pocket', 'Safety Net', 'Loans Taken', 'Loan Payments', 'Available to Invest', 'Invested Amount', 'Investment Liquidations', 'Projected Net Earnings', 'Loss in Purchase Power', 'Closing Balance'];
   const rows = projections.map(p => {
     const year = p.year;
     const yearInvestments = simulationInvestments?.[year] || [];
@@ -85,11 +87,13 @@ async function copyTableToClipboard(projections: YearProjection[], model: Model 
       : (p.investmentLiquidations || 0);
     const projectedNetEarnings = model ? (p.openingBalance * model.bankInterestRate / 100) : 0;
     const lossInPurchasePower = model ? (p.openingBalance * model.inflationRate / 100) : 0;
+    const totalExpenses = p.expenseDetails.reduce((sum, detail) => sum + detail.inflatedCost, 0);
     
     return [
       p.year,
       formatCurrency(p.openingBalance),
       formatCurrency(p.collections),
+      formatCurrency(totalExpenses),
       formatCurrency(p.expenses),
       formatCurrency(p.safetyNet),
       formatCurrency(p.loansTaken || 0),
@@ -187,19 +191,49 @@ export function ProjectionTable({ projections, onYearClick, model, simulationInv
         </div>
       ),
     }),
-    columnHelper.accessor('expenses', {
-      header: 'Expenses',
+    // New column: Total Expenses (before loan deduction)
+    columnHelper.display({
+      id: 'totalExpenses',
+      header: 'Total Expenses',
       cell: (info) => {
-        const value = info.getValue();
-        const expenseCount = info.row.original.expenseDetails.length;
+        const projection = info.row.original;
+        const totalExpenses = projection.expenseDetails.reduce((sum, detail) => sum + detail.inflatedCost, 0);
+        const expenseCount = projection.expenseDetails.length;
         return (
           <div className="space-y-1">
             <div className="text-red-600 font-medium">
-              {formatCurrency(value)}
+              {formatCurrency(totalExpenses)}
             </div>
             {expenseCount > 0 && (
               <Badge variant="secondary" className="text-xs">
                 {expenseCount} item{expenseCount > 1 ? 's' : ''}
+              </Badge>
+            )}
+          </div>
+        );
+      },
+    }),
+    columnHelper.accessor('expenses', {
+      header: 'Out-of-Pocket',
+      cell: (info) => {
+        const value = info.getValue();
+        const projection = info.row.original;
+        const totalExpenses = projection.expenseDetails.reduce((sum, detail) => sum + detail.inflatedCost, 0);
+        const loanAmount = projection.loansTaken || 0;
+        
+        // Show loan percentage if there's a loan
+        const loanPercentage = totalExpenses > 0 && loanAmount > 0 
+          ? ((loanAmount / totalExpenses) * 100).toFixed(1) 
+          : null;
+        
+        return (
+          <div className="space-y-1">
+            <div className="text-orange-600 font-medium">
+              {formatCurrency(value)}
+            </div>
+            {loanPercentage && (
+              <Badge variant="outline" className="text-xs text-blue-600 border-blue-600">
+                {loanPercentage}% loan
               </Badge>
             )}
           </div>

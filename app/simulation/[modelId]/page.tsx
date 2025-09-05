@@ -252,6 +252,13 @@ export default function SimulationPage() {
   // Generate projections when params, expenses, investments, or simulation investments change
   const projections = useMemo(() => {
     if (!simulationParams || !expenses) return [];
+    
+    // DEBUG: Log inputs to projection generation
+    console.log('🔧 GENERATING PROJECTIONS WITH:');
+    console.log(`  Monthly fee: $${simulationParams.monthlyReserveFeesPerHousingUnit || 0}`);
+    console.log(`  Housing units: ${simulationParams.housingUnits || 0}`);
+    console.log(`  Year adjustments count: ${Object.keys(yearAdjustments).length}`);
+    console.log(`  Simulation investments count: ${Object.keys(simulationInvestments).length}`);
     let baseProjections = generateProjections(simulationParams, expenses, investments);
 
     // Apply year adjustments and recalculate subsequent years
@@ -262,6 +269,17 @@ export default function SimulationPage() {
     // Apply simulation investments to projections
     if (Object.keys(simulationInvestments).length > 0) {
       baseProjections = applySimulationInvestments(baseProjections, simulationInvestments);
+    }
+
+    // DEBUG: Log final projections being returned
+    if (baseProjections.length > 0) {
+      const debugProjections = baseProjections.slice(0, 6); // First 6 years
+      console.log('🎯 FINAL PROJECTIONS BEING DISPLAYED:');
+      debugProjections.forEach(p => {
+        if (p.year >= 2020 && p.year <= 2025) {
+          console.log(`  Year ${p.year}: Collections $${p.collections.toLocaleString()}, Balance $${p.closingBalance.toLocaleString()}`);
+        }
+      });
     }
 
     return baseProjections;
