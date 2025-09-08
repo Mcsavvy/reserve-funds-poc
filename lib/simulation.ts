@@ -1235,9 +1235,9 @@ export function generateProjections(
       }
     }
 
-    // Calculate available cash AFTER accounting for loan payments
+    // Calculate available cash (collections + balance, loan payments are separate outflows)
     const currentYearCollections = currentMonthlyFee * 12 * (params.housingUnits || 0);
-    const availableCash = currentBalance + currentYearCollections - totalLoanPayments;
+    const availableCash = currentBalance + currentYearCollections;
     
     
     // Calculate expenses without loans first to see total burden
@@ -1275,9 +1275,9 @@ export function generateProjections(
       const shortfall = totalCashNeeded - availableCash;
       const maxYearLoanAmount = totalExpenseCost * (params.loanThresholdPercentage / 100);
       
-      // SIMPLE LOAN LOGIC: Take loan based on actual need, up to the threshold limit
-      // The threshold is the MAXIMUM allowed, not a requirement to take that amount
-      yearLoanAmount = Math.min(shortfall, maxYearLoanAmount);
+      // AGGRESSIVE LOAN LOGIC: Take maximum loan when there's a shortfall to minimize deficit
+      // The threshold is the MAXIMUM allowed, and we should use it when needed
+      yearLoanAmount = maxYearLoanAmount;
       
       // Debug logging for loan calculation
       console.log(`🔍 YEAR ${year} LOAN CALCULATION:`);
@@ -1285,20 +1285,16 @@ export function generateProjections(
       console.log(`   Available cash: $${availableCash.toLocaleString()}`);
       console.log(`   Shortfall: $${shortfall.toLocaleString()}`);
       console.log(`   Max loan (${params.loanThresholdPercentage}% of $${totalExpenseCost.toLocaleString()}): $${maxYearLoanAmount.toLocaleString()}`);
-      console.log(`   Loan taken: $${yearLoanAmount.toLocaleString()}`);
+      console.log(`   Loan taken: $${yearLoanAmount.toLocaleString()} (MAXIMUM to minimize deficit)`);
       
       // Calculate percentage based on TOTAL expenses (not out-of-pocket)
       const actualPercentage = totalExpenseCost > 0 ? (yearLoanAmount / totalExpenseCost) * 100 : 0;
       
-      // CRITICAL: Ensure loan never exceeds threshold
-      if (actualPercentage > params.loanThresholdPercentage) {
-        yearLoanAmount = maxYearLoanAmount;
-      }
-      
       // Warn if shortfall exceeds what can be covered by maximum loan
       if (shortfall > maxYearLoanAmount) {
         const remainingShortfall = shortfall - maxYearLoanAmount;
-        // Note: Remaining shortfall will result in deficit, but loan is capped at threshold
+        console.log(`   ⚠️  WARNING: Shortfall ($${shortfall.toLocaleString()}) exceeds max loan ($${maxYearLoanAmount.toLocaleString()})`);
+        console.log(`   ⚠️  Remaining shortfall after max loan: $${remainingShortfall.toLocaleString()}`);
       }
           }
     
