@@ -755,7 +755,10 @@ export function generateProjections(
   for (let year = params.fiscalYear; year < params.fiscalYear + params.period; year++) {
     const expenseDetails = calculateYearExpenses(expenses, year, params.fiscalYear, params, false, 0, 0);
     const totalExpenses = expenseDetails.reduce((sum, detail) => sum + detail.inflatedCost, 0);
-    const collections = initialFee * 12 * (params.housingUnits || 0);
+    // Start with monthly fees collection for first year, then apply inflation
+    const collections = (year === params.fiscalYear) 
+      ? params.monthlyReserveFeesPerHousingUnit * 12 * (params.housingUnits || 0)
+      : initialFee * 12 * (params.housingUnits || 0);
     const safetyNet = totalExpenses * (params.safetyNetPercentage / 100);
     const lossInPurchasePower = initialBalance > 0 ? initialBalance * (params.inflationRate / 100) : 0;
     
@@ -1357,8 +1360,10 @@ export function generateProjections(
     const totalOutOfPocketExpenses = Math.max(0, totalExpenseCost - yearLoanAmount);
     
     
-    // Calculate collections with the base fee
-    let collections = currentMonthlyFee * 12 * (params.housingUnits || 0);
+    // Calculate collections with the base fee - start with monthly fees collection for first year
+    let collections = (year === params.fiscalYear) 
+      ? params.monthlyReserveFeesPerHousingUnit * 12 * (params.housingUnits || 0)
+      : currentMonthlyFee * 12 * (params.housingUnits || 0);
     
     // In normalized mode, we may need to adjust fees to eliminate deficits
     if (isNormalized) {
