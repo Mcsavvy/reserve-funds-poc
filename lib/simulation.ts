@@ -118,7 +118,7 @@ export function isLargeExpense(
 
 /**
  * Calculate loan amount for a large expense
- * In normalization mode, loan amounts are adjusted to prevent deficits
+ * Smart loan logic: Only take loans when absolutely necessary to prevent deficits
  */
 export function calculateLoanAmount(
   inflatedCost: number,
@@ -132,48 +132,13 @@ export function calculateLoanAmount(
   currentFee: number = 0,
   housingUnits: number = 0
 ): number {
-  if (!isLargeExpense(inflatedCost, largeExpenseBaseline, inflationRate, yearsFromBase)) {
-    return 0;
-  }
+  // Debug loan calculation parameters
+  const inflatedBaseline = calculateInflatedCost(largeExpenseBaseline, inflationRate, yearsFromBase);
+  const isLarge = isLargeExpense(inflatedCost, largeExpenseBaseline, inflationRate, yearsFromBase);
   
-  if (!isNormalized) {
-    // Original logic: fixed percentage of large expenses
-  return inflatedCost * (loanThresholdPercentage / 100);
-  }
-  
-  // Normalized logic: take strategic loans to prevent deficits
-  // In normalized mode, we calculate loan amount to ensure we don't create deficits
-  // but still prefer fee increases when possible
-  
-  // Calculate the safety net needed for this expense
-  const safetyNetForExpense = inflatedCost * 0.10; // 10% safety net
-  const totalCashNeeded = inflatedCost + safetyNetForExpense;
-  
-  // If available cash can cover the expense + safety net, no loan needed
-  if (availableCash >= totalCashNeeded) {
-    return 0;
-  }
-  
-  // Calculate shortfall
-  const shortfall = totalCashNeeded - availableCash;
-  
-  // Check if fee increase can cover part of the shortfall
-  const maxPossibleFee = currentFee * (1 + maxFeeIncrease / 100);
-  const currentAnnualCollections = currentFee * 12 * housingUnits;
-  const maxPossibleCollections = maxPossibleFee * 12 * housingUnits;
-  const additionalCollectionCapacity = maxPossibleCollections - currentAnnualCollections;
-  
-  // If fee increase can cover the shortfall, no loan needed
-  if (additionalCollectionCapacity >= shortfall) {
-    return 0;
-  }
-  
-  // Calculate loan amount for the remaining shortfall after maximum fee increase
-  const remainingShortfall = shortfall - additionalCollectionCapacity;
-  const maxLoanAmount = inflatedCost * (loanThresholdPercentage / 100);
-  
-  // Take the minimum of what we need and what we're allowed to borrow
-  return Math.min(remainingShortfall, maxLoanAmount);
+  // DISABLED: Individual expense loan calculation is now handled at year level
+  // All loans are calculated collectively per year for better optimization
+  return 0;
 }
 
 /**
@@ -415,6 +380,325 @@ export function calculateYearInvestmentLiquidations(
 }
 
 /**
+ * Analyze deficit root causes by examining historical data and trends
+ */
+function analyzeDeficitRootCauses(
+  projections: YearProjection[],
+  deficitYear: number,
+  params: SimulationParams,
+  expenses: Expense[]
+): {
+  rootCauses: Array<{
+    cause: string;
+    impact: number;
+    yearContributed: number;
+    suggestedAction: string;
+  }>;
+  recommendedFeeAdjustment: number;
+  adjustmentStartYear: number;
+} {
+  const rootCauses: Array<{
+    cause: string;
+    impact: number;
+    yearContributed: number;
+    suggestedAction: string;
+  }> = [];
+  
+  let totalDeficitImpact = 0;
+  const deficitProjection = projections.find(p => p.year === deficitYear);
+  
+  if (!deficitProjection) {
+    return { rootCauses: [], recommendedFeeAdjustment: 0, adjustmentStartYear: params.fiscalYear };
+  }
+  
+  const deficitAmount = Math.abs(deficitProjection.closingBalance);
+  
+  // Analyze historical trends leading to deficit
+  const yearsToAnalyze = Math.min(5, deficitYear - params.fiscalYear);
+  
+  for (let lookbackYear = deficitYear - yearsToAnalyze; lookbackYear < deficitYear; lookbackYear++) {
+    const yearProjection = projections.find(p => p.year === lookbackYear);
+    if (!yearProjection) continue;
+    
+    // Check if inadequate fee collection contributed to deficit
+    const inflationAdjustedBaseFee = params.monthlyReserveFeesPerHousingUnit * 
+      Math.pow(1 + (params.inflationRate / 100), lookbackYear - params.fiscalYear);
+    const actualMonthlyFee = yearProjection.collections / (12 * (params.housingUnits || 1));
+    
+    if (actualMonthlyFee < inflationAdjustedBaseFee * 0.95) { // 5% tolerance
+      const feeShortfall = (inflationAdjustedBaseFee - actualMonthlyFee) * 12 * (params.housingUnits || 1);
+      const compoundedImpact = feeShortfall * Math.pow(1.02, deficitYear - lookbackYear); // 2% growth factor
+      
+      rootCauses.push({
+        cause: 'Inadequate fee collection relative to inflation',
+        impact: compoundedImpact,
+        yearContributed: lookbackYear,
+        suggestedAction: `Increase fees by $${(inflationAdjustedBaseFee - actualMonthlyFee).toFixed(2)} per unit`
+      });
+      totalDeficitImpact += compoundedImpact;
+    }
+    
+    // Check if missed investment opportunities contributed
+    if (yearProjection.availableToInvest > yearProjection.investedAmount) {
+      const missedInvestment = yearProjection.availableToInvest - yearProjection.investedAmount;
+      if (missedInvestment > 1000) { // Only significant amounts
+        const potentialEarnings = missedInvestment * 0.05 * (deficitYear - lookbackYear); // 5% annual return
+        
+        rootCauses.push({
+          cause: 'Missed investment opportunity',
+          impact: potentialEarnings,
+          yearContributed: lookbackYear,
+          suggestedAction: `Should have invested $${missedInvestment.toLocaleString()}`
+        });
+        totalDeficitImpact += potentialEarnings;
+      }
+    }
+    
+    // Check if excessive expenses without corresponding fee increases
+    const yearExpenses = calculateYearExpenses(expenses, lookbackYear, params.fiscalYear, params, false, 0, 0);
+    const totalYearExpenses = yearExpenses.reduce((sum, exp) => sum + exp.inflatedCost, 0);
+    
+    if (totalYearExpenses > yearProjection.collections * 0.8) { // Expenses > 80% of collections
+      const excessiveExpenseImpact = totalYearExpenses - (yearProjection.collections * 0.5); // Assume 50% is reasonable
+      
+      rootCauses.push({
+        cause: 'High expenses without corresponding fee adjustment',
+        impact: excessiveExpenseImpact,
+        yearContributed: lookbackYear,
+        suggestedAction: `Should have increased fees by $${(excessiveExpenseImpact / (12 * (params.housingUnits || 1))).toFixed(2)} per unit`
+      });
+      totalDeficitImpact += excessiveExpenseImpact;
+    }
+  }
+  
+  // Enhanced fee adjustment calculation that considers starting balance impact
+  const yearsRemainingInStudy = (params.fiscalYear + params.period) - deficitYear;
+  const yearsFromStart = deficitYear - params.fiscalYear;
+  
+  // Calculate base adjustment - more aggressive for earlier deficits regardless of starting balance
+  let baseAdjustmentMultiplier = 1.2;
+  
+  // Higher starting balance scenarios need more aggressive early intervention
+  if (params.startingAmount > 200000) { // High starting balance
+    if (yearsFromStart <= 5) {
+      baseAdjustmentMultiplier = 1.8; // Much more aggressive for early deficits with high starting balance
+    } else {
+      baseAdjustmentMultiplier = 1.4; // Still more aggressive than normal
+    }
+  } else if (yearsFromStart <= 3) {
+    baseAdjustmentMultiplier = 1.5; // Early deficits always need stronger intervention
+  }
+  
+  // Calculate total shortfall including buffer
+  const totalShortfall = deficitAmount + (deficitAmount * 0.3); // 30% safety buffer
+  
+  // Distribute adjustment across available years, with minimum thresholds
+  const yearsToDistribute = Math.max(yearsRemainingInStudy, 2); // At least 2 years
+  const recommendedFeeAdjustment = Math.max(
+    totalShortfall / (yearsToDistribute * 12 * (params.housingUnits || 1)) * baseAdjustmentMultiplier,
+    1.0 // Minimum $1 increase
+  );
+  
+  // Start adjustment earlier for high starting balance scenarios
+  let adjustmentStartYear: number;
+  if (params.startingAmount > 200000) {
+    // High starting balance: start adjustments much earlier
+    adjustmentStartYear = Math.max(
+      params.fiscalYear,
+      deficitYear - Math.min(5, Math.floor(yearsFromStart * 0.7))
+    );
+  } else {
+    // Normal scenarios
+    adjustmentStartYear = Math.max(
+      params.fiscalYear, 
+      deficitYear - Math.min(3, Math.floor(yearsRemainingInStudy / 2))
+    );
+  }
+  
+  return {
+    rootCauses,
+    recommendedFeeAdjustment,
+    adjustmentStartYear
+  };
+}
+
+/**
+ * Enhanced conservative surplus management for fee decreases
+ */
+function calculateConservativeFeeDecrease(
+  projections: YearProjection[],
+  currentYear: number,
+  currentFee: number,
+  params: SimulationParams,
+  expenses: Expense[]
+): {
+  canDecreaseFee: boolean;
+  suggestedDecrease: number;
+  reasoning: string;
+  canGoToZero?: boolean;
+} {
+  const currentProjection = projections.find(p => p.year === currentYear);
+  if (!currentProjection) {
+    return { canDecreaseFee: false, suggestedDecrease: 0, reasoning: 'No projection data available' };
+  }
+  
+  const currentBalance = currentProjection.closingBalance;
+  const minimumFee = params.minimumCollectionFee || 0;
+  
+  // NEW LOGIC: Allow fees to go to $0 if no minimum is set and sufficient funds exist
+  // If minimumCollectionFee is 0, we can reduce fees all the way to 0
+  // If minimumCollectionFee > 0, we respect that constraint
+  
+  const effectiveMinimumFee = minimumFee; // No tolerance - respect exact minimum
+  
+  // Check if current fee is already at the effective minimum
+  if (currentFee <= effectiveMinimumFee) {
+    const atMinimumReason = minimumFee > 0 
+      ? `Already at minimum collection fee ($${minimumFee.toFixed(2)})`
+      : 'Already at zero fee';
+    return { canDecreaseFee: false, suggestedDecrease: 0, reasoning: atMinimumReason };
+  }
+  
+  // Check if this is the "no more expenses for rest of simulation" scenario FIRST
+  const remainingYears = (params.fiscalYear + params.period) - currentYear;
+  let hasAnyRemainingExpenses = false;
+  let remainingSimulationExpenses = 0;
+  for (let futureYear = currentYear + 1; futureYear < params.fiscalYear + params.period; futureYear++) {
+    const futureExpenseDetails = calculateYearExpenses(expenses, futureYear, params.fiscalYear, params, false, 0, 0);
+    const futureYearExpenses = futureExpenseDetails.reduce((sum, detail) => sum + detail.inflatedCost, 0);
+    remainingSimulationExpenses += futureYearExpenses;
+    if (futureYearExpenses > 0) {
+      hasAnyRemainingExpenses = true;
+    }
+  }
+
+  // Calculate total upcoming expenses using SAME logic as main surplus detection (remaining simulation years, not 10-year lookahead)
+  let totalUpcomingExpenses = 0;
+  let hasSignificantUpcomingExpenses = false;
+  
+  // Use SAME calculation as main logic - remaining years in simulation only
+  for (let futureYear = currentYear + 1; futureYear < params.fiscalYear + params.period; futureYear++) {
+    const futureExpenseDetails = calculateYearExpenses(expenses, futureYear, params.fiscalYear, params, false, 0, 0);
+    const futureExpenses = futureExpenseDetails.reduce((sum, detail) => sum + detail.inflatedCost, 0);
+    totalUpcomingExpenses += futureExpenses;
+    
+    if (futureExpenses > currentBalance * 0.1) {
+      hasSignificantUpcomingExpenses = true;
+    }
+  }
+  
+  // Enhanced approach: Different safety multipliers based on fee flexibility
+  // If we can go to zero (no minimum fee), we can be more aggressive with surplus
+  // If there's a minimum fee, we need to be more conservative
+  const canGoToZero = minimumFee === 0;
+  let safetyMultiplier: number;
+  
+  if (canGoToZero) {
+    // ULTRA aggressive reduction when no minimum fee constraint
+    safetyMultiplier = hasSignificantUpcomingExpenses ? 1.5 : 1.2;
+  } else {
+    // Moderate when minimum fee exists
+    safetyMultiplier = hasSignificantUpcomingExpenses ? 2.0 : 1.5;
+  }
+  
+  const targetReserve = totalUpcomingExpenses * safetyMultiplier;
+  
+  // OVERRIDE SAFETY CHECK for end-of-simulation scenarios with no remaining expenses
+  const isEndOfSimulationWithNoExpenses = !hasAnyRemainingExpenses && remainingYears <= 5;
+  
+  if (!isEndOfSimulationWithNoExpenses && currentBalance <= targetReserve) {
+    return { 
+      canDecreaseFee: false, 
+      suggestedDecrease: 0, 
+      reasoning: `Current balance ($${currentBalance.toLocaleString()}) needed for upcoming expenses ($${totalUpcomingExpenses.toLocaleString()})` 
+    };
+  }
+  
+  // For end-of-simulation with no expenses, use remaining simulation expenses instead
+  const effectiveUpcomingExpenses = isEndOfSimulationWithNoExpenses ? remainingSimulationExpenses : totalUpcomingExpenses;
+  
+  // DEBUG: Log the expense calculations to see why they differ from main logic
+  console.log(`   💡 FEE DECREASE CALC: totalUpcoming=$${totalUpcomingExpenses.toLocaleString()}, effective=$${effectiveUpcomingExpenses.toLocaleString()}, endOfSim=${isEndOfSimulationWithNoExpenses}`);
+  
+  // Calculate safe decrease amount
+  const excessAmount = currentBalance - targetReserve;
+  
+  // Enhanced reduction calculation based on excess amount and fee flexibility
+  let reductionPercentage: number;
+  
+  // For very high surpluses, be much more aggressive
+  // MUCH MORE AGGRESSIVE REDUCTION LOGIC
+  const isVeryHighSurplus = currentBalance > totalUpcomingExpenses * 3; // Reduced from 8x to 3x
+  const hasMinimalExpenses = totalUpcomingExpenses < 50000; // Very low upcoming expenses
+  
+  let monthlyReduction: number;
+  
+  // SIMPLIFIED ULTRA-AGGRESSIVE LOGIC: Focus only on expenses, ignore starting balance completely
+  
+  
+  if (isEndOfSimulationWithNoExpenses && currentBalance > 20000) {
+    // NO MORE EXPENSES FOR REST OF SIMULATION: Immediate reduction to minimum fee
+    monthlyReduction = currentFee - effectiveMinimumFee;
+    reductionPercentage = 1.0; // For logging
+    console.log(`   🎯 END-OF-SIM: No expenses for remaining ${remainingYears} years - IMMEDIATE reduction to ${effectiveMinimumFee > 0 ? '$' + effectiveMinimumFee + ' minimum' : '$0'}`);
+  } else if (effectiveUpcomingExpenses === 0 && currentBalance > 15000) {
+    // NO EXPENSES: Ultra aggressive - reduce by 60% of current fee per year
+    monthlyReduction = Math.min(currentFee * 0.6, currentFee - effectiveMinimumFee);
+    reductionPercentage = 0.9; // For logging
+    console.log(`   🚀 ZERO EXPENSES DETECTED - Ultra aggressive 60% fee reduction`);
+  } else if (effectiveUpcomingExpenses < 25000 && currentBalance > 25000) {
+    // MINIMAL EXPENSES: Very aggressive - reduce by 25% of current fee per year  
+    monthlyReduction = Math.min(currentFee * 0.25, currentFee - effectiveMinimumFee);
+    reductionPercentage = 0.7; // For logging
+    console.log(`   ⚡ MINIMAL EXPENSES - Aggressive 25% fee reduction`);
+  } else if (currentBalance > effectiveUpcomingExpenses * 1.5) {
+    // HIGH SURPLUS: Aggressive - reduce by 30% of current fee per year
+    monthlyReduction = Math.min(currentFee * 0.3, currentFee - effectiveMinimumFee);
+    reductionPercentage = 0.5; // For logging
+    console.log(`   💰 HIGH SURPLUS - Aggressive 30% fee reduction`);
+  } else if (currentBalance > effectiveUpcomingExpenses * 1.1) {
+    // GOOD SURPLUS: Standard - reduce by 20% of current fee per year
+    monthlyReduction = Math.min(currentFee * 0.2, currentFee - effectiveMinimumFee);
+    reductionPercentage = 0.3; // For logging
+    console.log(`   ✅ GOOD SURPLUS - Standard 20% fee reduction`);
+  } else {
+    // MINIMAL SURPLUS: Conservative - reduce by 10% of current fee per year
+    monthlyReduction = Math.min(currentFee * 0.1, currentFee - effectiveMinimumFee);
+    reductionPercentage = 0.1; // For logging
+    console.log(`   📊 MINIMAL SURPLUS - Conservative 10% fee reduction`);
+  }
+  
+  // Calculate suggested new fee respecting minimum constraint
+  const suggestedNewFee = Math.max(effectiveMinimumFee, currentFee - monthlyReduction);
+  const actualDecrease = currentFee - suggestedNewFee;
+  
+  if (actualDecrease < 0.01) { // Less than 1 cent decrease
+    return { 
+      canDecreaseFee: false, 
+      suggestedDecrease: 0, 
+      reasoning: 'Calculated decrease too small to be meaningful',
+      canGoToZero 
+    };
+  }
+  
+  // Enhanced reasoning with zero-fee possibility
+  let reasoning = `Safe to reduce by $${actualDecrease.toFixed(2)} per unit. Excess: $${excessAmount.toLocaleString()}, Future expenses: $${effectiveUpcomingExpenses.toLocaleString()}`;
+  
+  if (canGoToZero && suggestedNewFee === 0) {
+    reasoning += `. Fee can go to $0 (no minimum set)`;
+  } else if (minimumFee > 0 && suggestedNewFee === minimumFee) {
+    reasoning += `. Limited by minimum fee ($${minimumFee.toFixed(2)})`;
+  }
+  
+  return {
+    canDecreaseFee: true,
+    suggestedDecrease: actualDecrease,
+    reasoning,
+    canGoToZero
+  };
+}
+
+/**
  * Generate year-by-year projections for a model
  */
 export function generateProjections(
@@ -423,6 +707,13 @@ export function generateProjections(
   investments: Investment[] = [],
   isNormalized: boolean = false
 ): YearProjection[] {
+  console.log('🚀 ULTRA-AGGRESSIVE FEE DECREASE VERSION - STARTING SIMULATION');
+  // ENHANCED RETROSPECTIVE FEE ADJUSTMENT APPROACH
+  // Step 1: Generate initial projections to identify deficits
+  // Step 2: Analyze root causes of deficits by looking back at past years
+  // Step 3: Implement multi-year fee adjustment strategy to prevent future deficits
+  // Step 4: Apply conservative surplus management for fee decreases
+  
   const projections: YearProjection[] = [];
   let currentBalance = params.startingAmount;
   
@@ -440,17 +731,560 @@ export function generateProjections(
   // Track investments across years
   const activeInvestments: Map<string, ActiveInvestment> = new Map();
   
+  // Track fee adjustment history for intelligent decision making
+  const feeAdjustmentHistory: Array<{
+    year: number;
+    oldFee: number;
+    newFee: number;
+    reason: string;
+    impact: number;
+  }> = [];
+  
+  // High starting balance flag for zero-deficit strategy
+  const isHighStartingBalance = params.startingAmount >= 400000;
+  
+  
+  // First pass: Generate initial projections to identify potential deficits
+  const initialProjections: YearProjection[] = [];
+  let initialBalance = params.startingAmount;
+  let initialFee = params.monthlyReserveFeesPerHousingUnit;
+  
+  // Run initial projection to identify deficit years
+  console.log(`🔍 INITIAL SCAN: Starting balance $${params.startingAmount.toLocaleString()}, Base fee $${params.monthlyReserveFeesPerHousingUnit}/unit`);
+  
   for (let year = params.fiscalYear; year < params.fiscalYear + params.period; year++) {
-    // Calculate available cash before expenses
-    const availableCash = currentBalance;
+    const expenseDetails = calculateYearExpenses(expenses, year, params.fiscalYear, params, false, 0, 0);
+    const totalExpenses = expenseDetails.reduce((sum, detail) => sum + detail.inflatedCost, 0);
+    const collections = initialFee * 12 * (params.housingUnits || 0);
+    const safetyNet = totalExpenses * (params.safetyNetPercentage / 100);
+    const lossInPurchasePower = initialBalance > 0 ? initialBalance * (params.inflationRate / 100) : 0;
     
+    const closingBalance = initialBalance + collections - totalExpenses - safetyNet - lossInPurchasePower;
+    
+    // Debug major expense years and deficit years
+    if (totalExpenses > 50000 || closingBalance < 0) {
+      console.log(`  Year ${year}: Expenses $${totalExpenses.toLocaleString()}, Collections $${collections.toLocaleString()}, Balance $${closingBalance.toLocaleString()}`);
+    }
+    
+    initialProjections.push({
+      year,
+      openingBalance: initialBalance,
+      collections,
+      expenses: totalExpenses,
+      safetyNet,
+      loansTaken: 0,
+      loanPayments: 0,
+      availableToInvest: Math.max(0, closingBalance),
+      investedAmount: 0,
+      investmentLiquidations: [],
+      projectedNetEarnings: 0,
+      closingBalance,
+      expenseDetails,
+      loanDetails: [],
+      investmentDetails: []
+    });
+    
+    initialBalance = closingBalance;
+    
+    // Apply basic inflation to fee
+    initialFee = initialFee * (1 + params.inflationRate / 100);
+  }
+  
+  // ZERO-DEFICIT STRATEGY for high starting balances
+  const deficitYears = initialProjections.filter(p => p.closingBalance < 0);
+  const lowBalanceYears = initialProjections.filter(p => p.closingBalance >= 0 && p.closingBalance < 50000);
+  const feeAdjustments: Map<number, number> = new Map();
+  
+  if (isHighStartingBalance && deficitYears.length > 0) {
+    console.log(`🎯 ZERO-DEFICIT STRATEGY ACTIVATED: Starting balance $${params.startingAmount.toLocaleString()} should prevent ALL deficits`);
+    
+    // Calculate total deficit amount across all years
+    const totalDeficitAmount = deficitYears.reduce((sum, p) => sum + Math.abs(p.closingBalance), 0);
+    console.log(`   Total deficit to prevent: $${totalDeficitAmount.toLocaleString()} across ${deficitYears.length} years`);
+    
+    // SIMPLIFIED APPROACH: Calculate what additional fee is needed to eliminate ALL deficits
+    // Based on your data: with $500K starting, still getting 5 deficit years
+    // This means we need much more aggressive fee increases
+    
+    // Strategy: Add enough monthly fee to generate sufficient cash flow
+    // to cover all deficit amounts plus a safety buffer
+    const totalCashShortfall = totalDeficitAmount + (totalDeficitAmount * 0.5); // 50% safety buffer
+    const yearsToSpread = Math.max(params.period - 5, 15); // Spread over most years, but not the last 5
+    const additionalAnnualCollections = totalCashShortfall / yearsToSpread;
+    const additionalMonthlyFee = additionalAnnualCollections / (12 * (params.housingUnits || 1));
+    
+    console.log(`   Cash shortfall: $${totalCashShortfall.toLocaleString()}`);
+    console.log(`   Additional monthly fee needed: $${additionalMonthlyFee.toFixed(2)} per unit`);
+    console.log(`   Spreading over ${yearsToSpread} years`);
+    
+    // Apply the additional fee to all years (except the last few)
+    for (let yearIndex = 0; yearIndex < yearsToSpread; yearIndex++) {
+      const year = params.fiscalYear + yearIndex;
+      
+      // Start with base increase, then add progressive scaling
+      let yearlyIncrease = additionalMonthlyFee;
+      
+      // Add progressive scaling for later years when major expenses occur
+      if (yearIndex >= 15) { // Years 2035 onwards need more
+        yearlyIncrease = additionalMonthlyFee * 1.5;
+      } else if (yearIndex >= 10) { // Years 2030 onwards need moderate increase
+        yearlyIncrease = additionalMonthlyFee * 1.2;
+      }
+      
+      feeAdjustments.set(year, yearlyIncrease);
+      
+      if (yearIndex < 5) { // Log first 5 years for debugging
+        console.log(`     Year ${year}: Adding $${yearlyIncrease.toFixed(2)} per unit`);
+      }
+    }
+    
+    console.log(`   Applied progressive fee increases to ${yearsToSpread} years to ensure zero deficits`);
+  }
+  
+  // FALLBACK: If high starting balance but no deficits detected in initial scan,
+  // still apply preventive increases to handle cash flow better
+  else if (isHighStartingBalance) {
+    // Check if balance drops below 25% of starting amount at any point
+    const criticalThreshold = params.startingAmount * 0.25;
+    const lowBalanceYearsExtended = initialProjections.filter(p => p.closingBalance < criticalThreshold);
+    
+    if (lowBalanceYearsExtended.length > 0) {
+      console.log(`🛡️ HIGH BALANCE PROTECTION: Preventing balance from dropping too low (below $${criticalThreshold.toLocaleString()})`);
+      
+      // Apply moderate increases to maintain healthy balance
+      const protectionFee = 2.0; // $2 per unit per month protection
+      for (let yearIndex = 0; yearIndex < Math.min(params.period, 20); yearIndex++) {
+        const year = params.fiscalYear + yearIndex;
+        const currentAdjustment = feeAdjustments.get(year) || 0;
+        feeAdjustments.set(year, Math.max(currentAdjustment, protectionFee));
+      }
+      
+      console.log(`   Applied $${protectionFee} protection fee to first 20 years`);
+    }
+  }
+  
+  // Enhanced analysis for lower starting balances - more aggressive approach
+  else {
+    console.log(`🔧 STANDARD DEFICIT PREVENTION: Starting balance $${params.startingAmount.toLocaleString()}`);
+    
+    // For low starting balances, be much more aggressive
+    const isLowStartingBalance = params.startingAmount < 200000;
+    
+    if (isLowStartingBalance && deficitYears.length > 0) {
+      console.log(`⚡ LOW BALANCE AGGRESSIVE MODE: ${deficitYears.length} deficit years detected`);
+      
+      // Calculate total deficit and apply aggressive strategy similar to high balance
+      const totalDeficitAmount = deficitYears.reduce((sum, p) => sum + Math.abs(p.closingBalance), 0);
+      const totalCashShortfall = totalDeficitAmount * 2.0; // Double buffer for low starting balance
+      const yearsToSpread = Math.max(Math.floor(params.period * 0.8), 10); // Spread over 80% of period
+      const additionalAnnualCollections = totalCashShortfall / yearsToSpread;
+      const additionalMonthlyFee = additionalAnnualCollections / (12 * (params.housingUnits || 1));
+      
+      console.log(`   Total deficit: $${totalDeficitAmount.toLocaleString()}`);
+      console.log(`   Cash shortfall (2x buffer): $${totalCashShortfall.toLocaleString()}`);
+      console.log(`   Additional monthly fee needed: $${additionalMonthlyFee.toFixed(2)} per unit`);
+      
+      // Apply the additional fee with progressive scaling
+      for (let yearIndex = 0; yearIndex < yearsToSpread; yearIndex++) {
+        const year = params.fiscalYear + yearIndex;
+        
+        // Progressive scaling for low balance scenarios
+        let yearlyIncrease = additionalMonthlyFee;
+        if (yearIndex >= 5) { // After year 5, increase more
+          yearlyIncrease = additionalMonthlyFee * 1.3;
+        }
+        
+        feeAdjustments.set(year, yearlyIncrease);
+        
+        if (yearIndex < 5) {
+          console.log(`     Year ${year}: Adding $${yearlyIncrease.toFixed(2)} per unit`);
+        }
+      }
+    } else {
+      // Standard analysis for normal starting balances
+      const problematicYears = [...deficitYears, ...lowBalanceYears.filter(p => !deficitYears.includes(p))];
+      
+      for (const problemProjection of problematicYears) {
+        const isDeficit = problemProjection.closingBalance < 0;
+        const analysis = analyzeDeficitRootCauses(initialProjections, problemProjection.year, params, expenses);
+        
+        if (analysis.recommendedFeeAdjustment > 0) {
+          const statusLabel = isDeficit ? 'DEFICIT' : 'LOW BALANCE';
+          console.log(`🔍 ${statusLabel} ANALYSIS for year ${problemProjection.year}:`);
+          console.log(`   Balance: $${problemProjection.closingBalance.toLocaleString()}`);
+          console.log(`   Recommended fee adjustment: $${analysis.recommendedFeeAdjustment.toFixed(2)} starting year ${analysis.adjustmentStartYear}`);
+          
+          // Apply more aggressive adjustment for deficit years
+          const adjustmentMultiplier = isDeficit ? 1.2 : 0.8;
+          const effectiveAdjustment = analysis.recommendedFeeAdjustment * adjustmentMultiplier;
+          
+          // Apply the recommended adjustment starting from the calculated year
+          for (let adjustYear = analysis.adjustmentStartYear; adjustYear <= problemProjection.year; adjustYear++) {
+            const currentAdjustment = feeAdjustments.get(adjustYear) || 0;
+            feeAdjustments.set(adjustYear, Math.max(currentAdjustment, effectiveAdjustment));
+          }
+        }
+      }
+    }
+    
+    // Enhanced early deficit prevention
+    if (deficitYears.length > 0) {
+      const firstDeficitYear = Math.min(...deficitYears.map(p => p.year));
+      const earlyYearsNeedingBoost = params.fiscalYear + 5; // Extend to 5 years
+      
+      if (firstDeficitYear <= earlyYearsNeedingBoost) {
+        // More aggressive base increases based on starting balance
+        let baseIncrease = 2.0;
+        if (isLowStartingBalance) baseIncrease = 4.0;
+        else if (isHighStartingBalance) baseIncrease = 3.0;
+        
+        for (let year = params.fiscalYear; year <= earlyYearsNeedingBoost; year++) {
+          const currentAdjustment = feeAdjustments.get(year) || 0;
+          feeAdjustments.set(year, Math.max(currentAdjustment, baseIncrease));
+        }
+        console.log(`🚨 EARLY DEFICIT PREVENTION: Applied $${baseIncrease} base increase to years ${params.fiscalYear}-${earlyYearsNeedingBoost}`);
+      }
+    }
+  }
+
+  for (let year = params.fiscalYear; year < params.fiscalYear + params.period; year++) {
+    // Apply intelligent fee adjustments FIRST, before calculating expenses and collections
+    if (!isNormalized) {
+      const minimumFee = params.minimumCollectionFee || 0;
+      
+      // Apply any pre-calculated fee adjustments from deficit analysis
+      const preCalculatedAdjustment = feeAdjustments.get(year) || 0;
+      if (preCalculatedAdjustment > 0) {
+        const oldFee = currentMonthlyFee;
+        
+        // For high starting balance scenarios, be more aggressive and ignore max increase limits if necessary
+        if (isHighStartingBalance) {
+          currentMonthlyFee = currentMonthlyFee + preCalculatedAdjustment;
+          console.log(`📈 YEAR ${year}: ZERO-DEFICIT fee increase from $${oldFee.toFixed(2)} to $${currentMonthlyFee.toFixed(2)} (added $${preCalculatedAdjustment.toFixed(2)})`);
+        } else {
+          currentMonthlyFee = Math.min(
+            currentMonthlyFee + preCalculatedAdjustment,
+            params.maximumAllowableFeeIncrease > 0 
+              ? currentMonthlyFee * (1 + params.maximumAllowableFeeIncrease / 100)
+              : currentMonthlyFee + preCalculatedAdjustment
+          );
+          console.log(`📈 YEAR ${year}: Preventive fee increase from $${oldFee.toFixed(2)} to $${currentMonthlyFee.toFixed(2)} based on deficit analysis`);
+        }
+        
+        feeAdjustmentHistory.push({
+          year,
+          oldFee,
+          newFee: currentMonthlyFee,
+          reason: isHighStartingBalance ? 'Zero-deficit strategy for high starting balance' : 'Deficit prevention based on root cause analysis',
+          impact: preCalculatedAdjustment
+        });
+      } else if (isHighStartingBalance && year <= params.fiscalYear + 5) {
+        // Debug: Log when no adjustment is found for high balance scenario
+        console.log(`🔍 YEAR ${year}: No fee adjustment found (high starting balance scenario)`);
+      }
+      
+      // Enhanced fee decrease logic for surplus scenarios - ALWAYS CHECK, regardless of starting balance
+      if (year > params.fiscalYear) { // Not in first year
+        const currentProjection = projections.find(p => p.year === year - 1);
+        if (currentProjection && currentProjection.closingBalance > 0) {
+          
+          // ENHANCED SURPLUS DETECTION: More intelligent thresholds based on starting balance and expenses
+          let surplusThreshold: number;
+          let veryHighSurplusThreshold: number;
+          
+          // Calculate upcoming expenses for better threshold setting
+          let upcomingExpenses = 0;
+          const remainingYears = (params.fiscalYear + params.period) - year;
+          let hasAnyRemainingExpenses = false;
+          
+          // Check ALL remaining years in the simulation, not just next 5
+          for (let futureYear = year; futureYear < params.fiscalYear + params.period; futureYear++) {
+            const futureExpenseDetails = calculateYearExpenses(
+              expenses, 
+              futureYear, 
+              params.fiscalYear, 
+              params, 
+              false, 
+              0, 
+              currentMonthlyFee
+            );
+            const futureYearExpenses = futureExpenseDetails.reduce((sum, detail) => sum + detail.inflatedCost, 0);
+            if (futureYearExpenses > 0) {
+              hasAnyRemainingExpenses = true;
+            }
+            upcomingExpenses += futureYearExpenses;
+          }
+          
+          // SPECIAL CASE: No more expenses for the rest of the simulation
+          const noMoreExpenses = !hasAnyRemainingExpenses;
+          
+          // ULTRA-AGGRESSIVE EXPENSE-ONLY BASED DETECTION: Ignore starting amount completely
+          // Focus ONLY on upcoming expenses for fee decrease decisions
+          
+          if (noMoreExpenses && remainingYears <= 5) {
+            // SPECIAL CASE: No more expenses for rest of simulation - IMMEDIATE reduction to minimum
+            surplusThreshold = 10000;  // Just $10K - almost any balance triggers reduction
+            veryHighSurplusThreshold = 20000; // Just $20K for immediate zero fee
+            console.log(`🎯 NO MORE EXPENSES for remaining ${remainingYears} years - IMMEDIATE fee reduction mode`);
+          } else if (upcomingExpenses > 0) {
+            // Base thresholds ONLY on upcoming expenses - ultra responsive
+            surplusThreshold = upcomingExpenses * 1.2;  // Just 1.2x upcoming expenses
+            veryHighSurplusThreshold = upcomingExpenses * 2.0; // Just 2x upcoming expenses
+          } else {
+            // No upcoming expenses - EXTREMELY aggressive since zero risk
+            surplusThreshold = 5000;   // Just $5K minimum buffer - ULTRA AGGRESSIVE
+            veryHighSurplusThreshold = 15000; // Just $15K for very aggressive reduction
+          }
+          
+          const isSubstantialSurplus = currentProjection.closingBalance > surplusThreshold;
+          const isVeryHighSurplus = currentProjection.closingBalance > veryHighSurplusThreshold;
+          
+          // Debug logging for surplus detection - LOG ALL YEARS TO DEBUG
+          if (true) { // Log ALL years to debug the issue
+            console.log(`🔍 YEAR ${year - 1} EXPENSE-BASED SURPLUS CHECK: Balance $${currentProjection.closingBalance.toLocaleString()}`);
+            console.log(`   Upcoming 5yr expenses: $${upcomingExpenses.toLocaleString()}`);
+            const thresholdDescription = noMoreExpenses && remainingYears <= 5 ? 'END-OF-SIM' : 
+                                       upcomingExpenses > 0 ? '1.2x expenses' : '$25K min';
+            const veryHighDescription = noMoreExpenses && remainingYears <= 5 ? 'END-OF-SIM' : 
+                                      upcomingExpenses > 0 ? '2x expenses' : '$50K min';
+            console.log(`   Surplus threshold: $${surplusThreshold.toLocaleString()} (${thresholdDescription})`);
+            console.log(`   Very high threshold: $${veryHighSurplusThreshold.toLocaleString()} (${veryHighDescription})`);
+            console.log(`   Surplus detected: ${isSubstantialSurplus ? '✅ YES' : '❌ NO'} | Very high: ${isVeryHighSurplus ? '✅ YES' : '❌ NO'}`);
+            if (noMoreExpenses) {
+              console.log(`   🎯 NO MORE EXPENSES for remaining ${remainingYears} years!`);
+            }
+          }
+          
+          if (isSubstantialSurplus) {
+            console.log(`💰 SURPLUS DETECTED in year ${year - 1}: Balance $${currentProjection.closingBalance.toLocaleString()}`);
+            
+            const decreaseAnalysis = calculateConservativeFeeDecrease(
+              projections,
+              year - 1,
+              currentMonthlyFee,
+              params,
+              expenses
+            );
+            
+            // For very high surplus, be more aggressive with reductions
+            let actualDecrease = decreaseAnalysis.suggestedDecrease;
+            if (isVeryHighSurplus && decreaseAnalysis.canDecreaseFee) {
+              actualDecrease = Math.max(actualDecrease, currentMonthlyFee * 0.1); // At least 10% reduction
+              console.log(`   Very high surplus detected - applying aggressive reduction`);
+            }
+            
+            if (decreaseAnalysis.canDecreaseFee && actualDecrease > 0) {
+              const oldFee = currentMonthlyFee;
+              currentMonthlyFee = Math.max(minimumFee, currentMonthlyFee - actualDecrease);
+              
+              feeAdjustmentHistory.push({
+                year,
+                oldFee,
+                newFee: currentMonthlyFee,
+                reason: isVeryHighSurplus ? 'Aggressive surplus management' : 'Conservative surplus management',
+                impact: -actualDecrease
+              });
+              
+              const zeroFeeNote = decreaseAnalysis.canGoToZero && currentMonthlyFee === 0 ? ' (reached $0 fee)' : '';
+              const minFeeNote = currentMonthlyFee === minimumFee && minimumFee > 0 ? ` (limited by minimum $${minimumFee})` : '';
+              console.log(`📉 YEAR ${year}: Fee decrease from $${oldFee.toFixed(2)} to $${currentMonthlyFee.toFixed(2)}${zeroFeeNote}${minFeeNote}`);
+              console.log(`   Reasoning: ${decreaseAnalysis.reasoning}`);
+            } else {
+              console.log(`   No fee reduction applied: ${decreaseAnalysis.reasoning}`);
+            }
+          }
+        }
+      }
+      
+      // Enhanced cash flow protection logic
+      const lookAheadYears = 5;
+      let requiresFlowProtection = false;
+      let cashFlowRisk = 0;
+      
+      // Calculate rolling cash flow projection
+      let projectedBalance = currentBalance;
+      for (let futureYear = year + 1; futureYear <= year + lookAheadYears && futureYear < params.fiscalYear + params.period; futureYear++) {
+        const futureExpenseDetails = calculateYearExpenses(expenses, futureYear, params.fiscalYear, params, false, 0, 0);
+        const futureExpenses = futureExpenseDetails.reduce((sum, detail) => sum + detail.inflatedCost, 0);
+        const futureCollections = currentMonthlyFee * 12 * (params.housingUnits || 0);
+        
+        projectedBalance = projectedBalance + futureCollections - futureExpenses;
+        
+        // Multiple risk factors
+        if (futureExpenses > currentBalance * 0.8) { // Major expense vs current balance
+          cashFlowRisk += 0.3;
+        }
+        if (projectedBalance < 10000) { // Projected low balance
+          cashFlowRisk += 0.4;
+        }
+        if (futureExpenses > futureCollections * 3) { // Expense much larger than annual collections
+          cashFlowRisk += 0.3;
+        }
+      }
+      
+      // Apply cash flow protection if significant risk detected
+      if (cashFlowRisk >= 0.5 && !feeAdjustments.has(year)) {
+        requiresFlowProtection = true;
+        const oldFee = currentMonthlyFee;
+        
+        // Calculate protection increase based on risk level
+        const protectionIncrease = Math.max(
+          oldFee * (0.05 + cashFlowRisk * 0.1), // 5-15% based on risk
+          1.0 // Minimum $1 increase
+        );
+        
+        currentMonthlyFee = Math.min(
+          currentMonthlyFee + protectionIncrease,
+          params.maximumAllowableFeeIncrease > 0 
+            ? oldFee * (1 + params.maximumAllowableFeeIncrease / 100)
+            : currentMonthlyFee + protectionIncrease
+        );
+        
+        console.log(`🛡️ YEAR ${year}: Cash flow protection increase from $${oldFee.toFixed(2)} to $${currentMonthlyFee.toFixed(2)} (Risk: ${(cashFlowRisk * 100).toFixed(0)}%)`);
+      }
+      
+      // ZERO-DEFICIT ENFORCEMENT: Additional check for high starting balance scenarios
+      if (isHighStartingBalance && currentBalance < 25000) { // If balance drops too low despite high starting amount
+        const oldFee = currentMonthlyFee;
+        const emergencyIncrease = Math.max(5.0, oldFee * 0.2); // At least $5 or 20% increase
+        
+        currentMonthlyFee = Math.min(
+          currentMonthlyFee + emergencyIncrease,
+          params.maximumAllowableFeeIncrease > 0 
+            ? oldFee * (1 + params.maximumAllowableFeeIncrease / 100)
+            : currentMonthlyFee + emergencyIncrease
+        );
+        
+        console.log(`⚡ YEAR ${year}: Zero-deficit enforcement increase from $${oldFee.toFixed(2)} to $${currentMonthlyFee.toFixed(2)} (Balance: $${currentBalance.toLocaleString()})`);
+      }
+    }
+
+    // Calculate loan payments for existing loans FIRST
+    let totalLoanPayments = 0;
+    const currentYearLoanDetails: LoanDetail[] = [];
+    
+    for (const [loanId, loan] of activeLoans.entries()) {
+      // Don't start payments until the year after the loan is taken
+      if (year <= loan.startYear) continue;
+      
+      const paymentBreakdown = calculateLoanPaymentBreakdown(
+        loan.remainingBalance,
+        loan.annualPayment,
+        params.loanInterestRate || 0
+      );
+      
+      if (loan.remainingBalance > 0) {
+        totalLoanPayments += paymentBreakdown.interest + paymentBreakdown.principal;
+        
+        currentYearLoanDetails.push({
+          year: loan.startYear,
+          originalAmount: loan.originalAmount,
+          remainingBalance: loan.remainingBalance,
+          payment: paymentBreakdown.interest + paymentBreakdown.principal,
+          interest: paymentBreakdown.interest,
+          principal: paymentBreakdown.principal,
+        });
+        
+        // Update remaining balance
+        loan.remainingBalance -= paymentBreakdown.principal;
+        
+        // Remove loan if fully paid
+        if (loan.remainingBalance <= 0.01) {
+          activeLoans.delete(loanId);
+        }
+      }
+    }
+
+    // Calculate available cash AFTER accounting for loan payments
+    const currentYearCollections = currentMonthlyFee * 12 * (params.housingUnits || 0);
+    const availableCash = currentBalance + currentYearCollections - totalLoanPayments;
+    
+    
+    // Calculate expenses without loans first to see total burden
+    const preliminaryExpenseDetails = calculateYearExpenses(
+      expenses, 
+      year, 
+      params.fiscalYear, 
+      params, 
+      false, // No normalization for preliminary calculation
+      0, // No available cash consideration for preliminary
+      currentMonthlyFee
+    );
+    
+    // Calculate total cash needed for all expenses INCLUDING loan payments
+    let totalExpenseCost = preliminaryExpenseDetails.reduce((sum, detail) => sum + detail.inflatedCost, 0);
+    const totalSafetyNet = totalExpenseCost * (params.safetyNetPercentage / 100);
+    const totalCashNeeded = totalExpenseCost + totalSafetyNet + totalLoanPayments;
+    
+    
+    // Smart loan calculation for the entire year
+    let yearLoanAmount = 0;
+    
+    
+    if (totalCashNeeded > availableCash) {
+      const shortfall = totalCashNeeded - availableCash;
+      const maxYearLoanAmount = totalExpenseCost * (params.loanThresholdPercentage / 100);
+      
+      // STRATEGIC LOAN PLANNING: Check if we should take maximum loan for future planning
+      let strategicLoanAmount = Math.min(shortfall, maxYearLoanAmount);
+      
+      // Look ahead for future major expenses (next 3 years)
+      let hasSignificantFutureExpenses = false;
+      let totalFutureExpenses = 0;
+      
+      for (let futureYear = year + 1; futureYear <= year + 3 && futureYear < params.fiscalYear + params.period; futureYear++) {
+        const futureExpenseDetails = calculateYearExpenses(
+          expenses, 
+          futureYear, 
+          params.fiscalYear, 
+          params, 
+          false, 
+          0, 
+          currentMonthlyFee
+        );
+        const futureYearExpenses = futureExpenseDetails.reduce((sum, detail) => sum + detail.inflatedCost, 0);
+        totalFutureExpenses += futureYearExpenses;
+        
+        // Consider significant if future expenses > 30% of current available cash
+        if (futureYearExpenses > availableCash * 0.3) {
+          hasSignificantFutureExpenses = true;
+        }
+      }
+      
+      // If we have future major expenses and current shortfall is small, consider taking maximum loan
+      const isSmallCurrentShortfall = shortfall < maxYearLoanAmount * 0.5; // Less than 50% of max loan
+      
+      if (hasSignificantFutureExpenses && isSmallCurrentShortfall && totalExpenseCost > 0) {
+        // Take maximum allowable loan to build reserves for future expenses
+        strategicLoanAmount = maxYearLoanAmount;
+      }
+      
+      yearLoanAmount = strategicLoanAmount;
+      
+      // Calculate percentage based on TOTAL expenses (not out-of-pocket)
+      const actualPercentage = totalExpenseCost > 0 ? (yearLoanAmount / totalExpenseCost) * 100 : 0;
+      
+      // CRITICAL: Ensure loan never exceeds threshold
+      if (actualPercentage > params.loanThresholdPercentage) {
+        yearLoanAmount = maxYearLoanAmount;
+      }
+      
+      // Warn if shortfall exceeds what can be covered by maximum loan
+      if (shortfall > maxYearLoanAmount) {
+        const remainingShortfall = shortfall - maxYearLoanAmount;
+        // Note: Remaining shortfall will result in deficit, but loan is capped at threshold
+      }
+          }
+    
+    // Now recalculate expenses with the year loan amount available
+    const adjustedAvailableCash = availableCash + yearLoanAmount;
     const expenseDetails = calculateYearExpenses(
       expenses, 
       year, 
       params.fiscalYear, 
       params, 
-      isNormalized, 
-      availableCash, 
+      false, // Always use non-normalized to preserve year-level loan logic
+      adjustedAvailableCash, 
       currentMonthlyFee
     );
 
@@ -490,11 +1324,6 @@ export function generateProjections(
       }
     }
     
-    // Calculate total out-of-pocket expenses (excluding loan portions)
-    let totalOutOfPocketExpenses = expenseDetails.reduce((sum, detail) => sum + detail.outOfPocketAmount, 0);
-    
-    // Calculate total loans taken this year
-    let totalLoansTaken = expenseDetails.reduce((sum, detail) => sum + detail.loanAmount, 0);
     
     // Calculate total investment liquidations this year
     const totalInvestmentLiquidations = investmentDetails.reduce((sum, detail) => sum + detail.liquidatedAmount, 0);
@@ -513,6 +1342,11 @@ export function generateProjections(
       isEarlyLiquidation: false
     }));
     
+    // Loan payments already calculated above
+
+    // Use the smart year-level loan calculation instead of individual expense loans
+    const totalLoansTaken = yearLoanAmount;
+    
     // Add new loans to active loans tracking
     if (totalLoansTaken > 0) {
       const loanId = `${year}-loan`;
@@ -530,67 +1364,21 @@ export function generateProjections(
       });
     }
     
-    // Calculate loan payments for existing loans
-    let totalLoanPayments = 0;
-    const currentYearLoanDetails: LoanDetail[] = [];
+    // Update total expense cost with actual expense details (may differ from preliminary)
+    totalExpenseCost = expenseDetails.reduce((sum, detail) => sum + detail.inflatedCost, 0);
     
-    for (const [loanId, loan] of activeLoans.entries()) {
-      // Don't start payments until the year after the loan is taken
-      if (year <= loan.startYear) continue;
-      
-      const paymentBreakdown = calculateLoanPaymentBreakdown(
-        loan.remainingBalance,
-        loan.annualPayment,
-        params.loanInterestRate || 0
-      );
-      
-      if (loan.remainingBalance > 0) {
-        totalLoanPayments += paymentBreakdown.interest + paymentBreakdown.principal;
-        
-        currentYearLoanDetails.push({
-          year: loan.startYear,
-          originalAmount: loan.originalAmount,
-          remainingBalance: loan.remainingBalance,
-          payment: paymentBreakdown.interest + paymentBreakdown.principal,
-          interest: paymentBreakdown.interest,
-          principal: paymentBreakdown.principal,
-        });
-        
-        // Update remaining balance
-        loan.remainingBalance -= paymentBreakdown.principal;
-        
-        // Remove loan if fully paid
-        if (loan.remainingBalance <= 0.01) {
-          activeLoans.delete(loanId);
-        }
-      }
-    }
+    // Calculate total out-of-pocket expenses (total expenses minus year loan)  
+    const totalOutOfPocketExpenses = Math.max(0, totalExpenseCost - yearLoanAmount);
     
-    // Calculate collections
+    
+    // Calculate collections with the base fee
     let collections = currentMonthlyFee * 12 * (params.housingUnits || 0);
     
-    // In normalized mode, we need to recalculate expenses and loans with adjusted fees
+    // In normalized mode, we may need to adjust fees to eliminate deficits
     if (isNormalized) {
-      // In optimization mode: don't consider max fee increase % in any year
-      // Can set fees to any level to match deficit
-      
-      // Recalculate expense details with current fee and available cash
-      const recalculatedExpenseDetails = calculateYearExpenses(
-        expenses, 
-        year, 
-        params.fiscalYear, 
-        params, 
-        isNormalized, 
-        currentBalance + collections, // Available cash including current collections
-        currentMonthlyFee
-      );
-      
-      // Update calculations with recalculated expenses
-      const recalculatedOutOfPocket = recalculatedExpenseDetails.reduce((sum, detail) => sum + detail.outOfPocketAmount, 0);
-      const recalculatedLoansTaken = recalculatedExpenseDetails.reduce((sum, detail) => sum + detail.loanAmount, 0);
-      
-      // Calculate total cash needed including safety net
-      const totalCashNeeded = recalculatedOutOfPocket + (recalculatedOutOfPocket * (params.safetyNetPercentage / 100)) + totalLoanPayments;
+      // Calculate total cash needed including safety net and loan payments
+      const normalizedSafetyNet = totalOutOfPocketExpenses * (params.safetyNetPercentage / 100);
+      const totalCashNeeded = totalOutOfPocketExpenses + normalizedSafetyNet + totalLoanPayments;
       const totalAvailable = currentBalance + collections; // Loans do NOT add to available cash
       
       // If there's still a shortfall, increase fees without any percentage limit
@@ -604,132 +1392,8 @@ export function generateProjections(
         collections = Math.max(newCollections, minCollections);
         currentMonthlyFee = collections / (12 * (params.housingUnits || 1));
         
-        // Recalculate with updated fees one more time
-        const finalExpenseDetails = calculateYearExpenses(
-          expenses, 
-          year, 
-          params.fiscalYear, 
-          params, 
-          isNormalized, 
-          currentBalance + collections,
-          currentMonthlyFee
-        );
-        
-        // Update final values for this year
-        expenseDetails.length = 0; // Clear array
-        expenseDetails.push(...finalExpenseDetails); // Add recalculated values
-        
-        // Recalculate totals with updated expense details
-        totalOutOfPocketExpenses = expenseDetails.reduce((sum, detail) => sum + detail.outOfPocketAmount, 0);
-        totalLoansTaken = expenseDetails.reduce((sum, detail) => sum + detail.loanAmount, 0);
-        
-        // Update active loans if loan amounts changed
-        if (totalLoansTaken > 0) {
-          const loanId = `${year}-loan`;
-          const annualPayment = calculateAnnualLoanPayment(
-            totalLoansTaken,
-            params.loanInterestRate || 0,
-            params.loanTenureYears || 10
-          );
-          
-          activeLoans.set(loanId, {
-            originalAmount: totalLoansTaken,
-            remainingBalance: totalLoansTaken,
-            annualPayment,
-            startYear: year,
-          });
-        }
+        // Note: Normalized mode increased collections to eliminate deficit
       }
-    }
-    
-    // Update fee for next year (apply intelligent fee adjustments)
-    if (!isNormalized) {
-      const minimumFee = params.minimumCollectionFee || 0;
-      
-      // Check for upcoming major expenses in the next 5 years
-      let hasUpcomingMajorExpenses = false;
-      let totalUpcomingExpenses = 0;
-      const lookAheadYears = 5; // Look ahead 5 years for fee planning
-      
-      for (let futureYear = year + 1; futureYear <= year + lookAheadYears && futureYear < params.fiscalYear + params.period; futureYear++) {
-        const futureExpenseDetails = calculateYearExpenses(
-          expenses, 
-          futureYear, 
-          params.fiscalYear, 
-          params, 
-          false, // Not normalized for this check
-          currentBalance, 
-          currentMonthlyFee
-        );
-        const futureExpenses = futureExpenseDetails.reduce((sum, detail) => sum + detail.inflatedCost, 0);
-        totalUpcomingExpenses += futureExpenses;
-        
-        if (futureExpenses > currentBalance * 0.1) { // If future expense > 10% of current balance
-          hasUpcomingMajorExpenses = true;
-        }
-      }
-      
-      // Calculate current financial situation with current fee
-      const currentCollections = currentMonthlyFee * 12 * (params.housingUnits || 0);
-      const currentSafetyNet = totalOutOfPocketExpenses * (params.safetyNetPercentage / 100);
-      const currentLossInPurchasePower = currentBalance > 0 ? currentBalance * (params.inflationRate / 100) : 0;
-      const currentClosingBalance = currentBalance + currentCollections + totalInvestmentLiquidations - 
-        totalOutOfPocketExpenses - currentSafetyNet - totalLoanPayments - currentLossInPurchasePower;
-      
-      // Calculate maximum allowed fee increase
-      let maxAllowedFee = currentMonthlyFee;
-      if (params.maximumAllowableFeeIncrease > 0) {
-        maxAllowedFee = currentMonthlyFee * (1 + params.maximumAllowableFeeIncrease / 100);
-      }
-      
-      // Intelligent fee adjustment decision
-      if (currentClosingBalance < 0) {
-        // DEFICIT: Increase fees up to maximum allowed
-        const deficitAmount = Math.abs(currentClosingBalance);
-        const additionalCollectionsNeeded = deficitAmount * 1.1; // 10% buffer
-        const additionalMonthlyFeeNeeded = additionalCollectionsNeeded / (12 * (params.housingUnits || 1));
-        const targetFee = currentMonthlyFee + additionalMonthlyFeeNeeded;
-        
-        currentMonthlyFee = Math.min(targetFee, maxAllowedFee);
-      }
-      else if (hasUpcomingMajorExpenses && currentClosingBalance < totalUpcomingExpenses * 0.5) {
-        // UPCOMING EXPENSES: Prepare by increasing fees gradually
-        const preparationNeeded = (totalUpcomingExpenses * 0.5) - currentClosingBalance;
-        const preparationFeeIncrease = (preparationNeeded / lookAheadYears) / (12 * (params.housingUnits || 1));
-        const targetFee = currentMonthlyFee + preparationFeeIncrease;
-        
-        currentMonthlyFee = Math.min(targetFee, maxAllowedFee);
-      }
-      else if (currentClosingBalance > (totalOutOfPocketExpenses + currentSafetyNet) * 3) {
-        // LARGE SURPLUS: Only reduce if very large surplus and no major upcoming expenses
-        if (!hasUpcomingMajorExpenses) {
-          const surplusAmount = currentClosingBalance;
-          const maxCollectionReduction = surplusAmount * 0.3; // Only reduce 30% of surplus
-          const maxFeeReduction = maxCollectionReduction / (12 * (params.housingUnits || 1));
-          const targetFee = Math.max(minimumFee, currentMonthlyFee - maxFeeReduction);
-          
-          if (targetFee < currentMonthlyFee) {
-            currentMonthlyFee = targetFee;
-          }
-        }
-      }
-      else {
-        // STABLE SITUATION: Apply minimal inflation adjustment only if allowed
-        if (params.maximumAllowableFeeIncrease > 0) {
-          // Very conservative inflation adjustment - only 50% of inflation rate
-          const conservativeInflationIncrease = currentMonthlyFee * (params.inflationRate / 100) * 0.5;
-          const targetFee = currentMonthlyFee + conservativeInflationIncrease;
-          
-          currentMonthlyFee = Math.min(targetFee, maxAllowedFee);
-        }
-        // If Max Fee Increase % is 0, keep current fee unchanged
-      }
-      
-      // Update collections with the adjusted fee
-      collections = currentMonthlyFee * 12 * (params.housingUnits || 0);
-    } else {
-      // Normalized logic: no fee increase constraints - fees are set to match deficit
-      // Keep current fee as is (already optimized in the normalization logic above)
     }
     
     // Calculate safety net (percentage of total expenses including loans in normalized mode)
@@ -763,6 +1427,7 @@ export function generateProjections(
     // Note: Loans are NOT added to balance - they directly pay part of expenses
     const closingBalance = currentBalance + collections + totalInvestmentLiquidations - totalOutOfPocketExpenses - safetyNet - totalLoanPayments - lossInPurchasePower;
     
+    
     projections.push({
       year,
       openingBalance: currentBalance,
@@ -783,6 +1448,14 @@ export function generateProjections(
     
     // Update current balance for next year
     currentBalance = closingBalance;
+  }
+  
+  // Basic deficit monitoring
+  if (!isNormalized) {
+    const deficitYears = projections.filter(p => p.closingBalance < 0);
+    if (deficitYears.length > 0) {
+      console.log(`Deficit years: ${deficitYears.map(y => y.year).join(', ')}`);
+    }
   }
   
   // Apply normalization optimization for normalized projections
@@ -863,39 +1536,79 @@ export function generateProjections(
       }
     }
     
-    // Apply cash reserve threshold management if closing balance is too high
+    // Apply enhanced conservative surplus management if final balance is excessive
     const finalProjection = projections[projections.length - 1];
-    const targetCashReserve = finalProjection.closingBalance * (params.cashReserveThresholdPercentage / 100);
-    
-    if (finalProjection.closingBalance > targetCashReserve * 3) {
-      // Reduce fees across all years to bring balance closer to target
-      const excessAmount = finalProjection.closingBalance - targetCashReserve;
-      const totalCollections = projections.reduce((sum, p) => sum + p.collections, 0);
-      const reductionFactor = Math.max(0.3, 1 - (excessAmount / totalCollections));
+    if (finalProjection) {
+      const lastYearFee = finalProjection.collections / (12 * (params.housingUnits || 1));
+      const finalSurplusAnalysis = calculateConservativeFeeDecrease(
+        projections,
+        finalProjection.year,
+        lastYearFee,
+        params,
+        expenses
+      );
       
-      let currentBalance = params.startingAmount;
+      // Only apply reduction if the analysis strongly recommends it
+      // Enhanced threshold: Allow more aggressive reduction when we can go to zero
+      const reductionThreshold = finalSurplusAnalysis.canGoToZero ? lastYearFee * 0.02 : lastYearFee * 0.05;
       
-      // Apply reduction to all years
-      for (let i = 0; i < projections.length; i++) {
-        const projection = projections[i];
-        projection.openingBalance = currentBalance;
+      if (finalSurplusAnalysis.canDecreaseFee && finalSurplusAnalysis.suggestedDecrease > reductionThreshold) {
+        console.log(`💰 FINAL SURPLUS ANALYSIS: ${finalSurplusAnalysis.reasoning}`);
+        console.log(`   Suggested reduction: $${finalSurplusAnalysis.suggestedDecrease.toFixed(2)} per unit`);
         
-        const newCollections = projection.collections * reductionFactor;
-        const minCollections = (params.minimumCollectionFee || 0) * 12 * (params.housingUnits || 0);
+        // Apply conservative reduction to last few years only
+        const yearsToAdjust = Math.min(3, projections.length);
         
-        if (newCollections >= minCollections) {
-          projection.collections = newCollections;
+        // Enhanced reduction factor based on zero-fee capability
+        const reductionFactor = finalSurplusAnalysis.canGoToZero ? 0.8 : 0.5; // More aggressive when no minimum fee
+        
+        // Recalculate only the affected years
+        for (let i = projections.length - yearsToAdjust; i < projections.length; i++) {
+          if (i < 0) continue;
+          
+          const projection = projections[i];
+          if (i > 0) {
+            projection.openingBalance = projections[i - 1].closingBalance;
+          }
+          
+          const currentFee = projection.collections / (12 * (params.housingUnits || 1));
+          const adjustedFee = Math.max(
+            params.minimumCollectionFee || 0,
+            currentFee - (finalSurplusAnalysis.suggestedDecrease * reductionFactor)
+          );
+          
+          projection.collections = adjustedFee * 12 * (params.housingUnits || 0);
           
           // Recalculate derived values
           const lossInPurchasePower = projection.openingBalance > 0 ? projection.openingBalance * (params.inflationRate / 100) : 0;
-          const reducedLiquidationsTotal = Array.isArray(projection.investmentLiquidations) 
+          const liquidationsTotal = Array.isArray(projection.investmentLiquidations) 
             ? projection.investmentLiquidations.reduce((sum: number, liquidation: any) => sum + (liquidation.liquidatedAmount || 0), 0)
             : (projection.investmentLiquidations || 0);
-          projection.availableToInvest = Math.max(0, projection.openingBalance + projection.collections + reducedLiquidationsTotal - projection.expenses - projection.safetyNet - projection.loanPayments - lossInPurchasePower);
-          projection.closingBalance = projection.openingBalance + projection.collections + reducedLiquidationsTotal - projection.expenses - projection.safetyNet - projection.loanPayments - lossInPurchasePower;
+          
+          projection.availableToInvest = Math.max(0, 
+            projection.openingBalance + projection.collections + liquidationsTotal - 
+            projection.expenses - projection.safetyNet - projection.loanPayments - lossInPurchasePower
+          );
+          
+          projection.closingBalance = projection.openingBalance + projection.collections + liquidationsTotal - 
+            projection.expenses - projection.safetyNet - projection.loanPayments - lossInPurchasePower;
         }
         
-        currentBalance = projection.closingBalance;
+        const zeroFeeAchieved = finalSurplusAnalysis.canGoToZero && 
+          projections.some(p => (p.collections / (12 * (params.housingUnits || 1))) === 0);
+        
+        const resultMessage = zeroFeeAchieved 
+          ? `✅ Applied conservative fee reduction to final ${yearsToAdjust} years (achieved $0 fee)`
+          : `✅ Applied conservative fee reduction to final ${yearsToAdjust} years`;
+        
+        console.log(resultMessage);
+      } else {
+        console.log(`✋ Conservative analysis: No fee reduction recommended`);
+        if (!finalSurplusAnalysis.canDecreaseFee) {
+          console.log(`   Reason: ${finalSurplusAnalysis.reasoning}`);
+        } else {
+          console.log(`   Reduction too small: $${finalSurplusAnalysis.suggestedDecrease.toFixed(2)} < threshold $${reductionThreshold.toFixed(2)}`);
+        }
       }
     }
   }
@@ -933,6 +1646,7 @@ export function applyYearAdjustments(
     
     const adjustment = adjustments[year];
     const projection = adjustedProjections[yearIndex];
+    
     
     // Apply adjustments to the specific year
     const adjustedProjection = {
