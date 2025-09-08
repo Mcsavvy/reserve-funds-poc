@@ -530,7 +530,13 @@ function calculateConservativeFeeDecrease(
   currentYear: number,
   currentFee: number,
   params: SimulationParams,
-  expenses: Expense[]
+  expenses: Expense[],
+  activeLoans: Map<string, { 
+    originalAmount: number; 
+    remainingBalance: number; 
+    annualPayment: number;
+    startYear: number;
+  }>
 ): {
   canDecreaseFee: boolean;
   suggestedDecrease: number;
@@ -566,8 +572,18 @@ function calculateConservativeFeeDecrease(
   for (let futureYear = currentYear + 1; futureYear < params.fiscalYear + params.period; futureYear++) {
     const futureExpenseDetails = calculateYearExpenses(expenses, futureYear, params.fiscalYear, params, false, 0, 0);
     const futureYearExpenses = futureExpenseDetails.reduce((sum, detail) => sum + detail.inflatedCost, 0);
-    remainingSimulationExpenses += futureYearExpenses;
-    if (futureYearExpenses > 0) {
+    
+    // Also check for loan payments in future years
+    let futureLoanPayments = 0;
+    for (const [loanId, loan] of activeLoans) {
+      if (futureYear >= loan.startYear && loan.remainingBalance > 0) {
+        futureLoanPayments += loan.annualPayment;
+      }
+    }
+    
+    const totalFutureCosts = futureYearExpenses + futureLoanPayments;
+    remainingSimulationExpenses += totalFutureCosts;
+    if (totalFutureCosts > 0) {
       hasAnyRemainingExpenses = true;
     }
   }
@@ -580,9 +596,19 @@ function calculateConservativeFeeDecrease(
   for (let futureYear = currentYear + 1; futureYear < params.fiscalYear + params.period; futureYear++) {
     const futureExpenseDetails = calculateYearExpenses(expenses, futureYear, params.fiscalYear, params, false, 0, 0);
     const futureExpenses = futureExpenseDetails.reduce((sum, detail) => sum + detail.inflatedCost, 0);
-    totalUpcomingExpenses += futureExpenses;
     
-    if (futureExpenses > currentBalance * 0.1) {
+    // Also check for loan payments in future years
+    let futureLoanPayments = 0;
+    for (const [loanId, loan] of activeLoans) {
+      if (futureYear >= loan.startYear && loan.remainingBalance > 0) {
+        futureLoanPayments += loan.annualPayment;
+      }
+    }
+    
+    const totalFutureCosts = futureExpenses + futureLoanPayments;
+    totalUpcomingExpenses += totalFutureCosts;
+    
+    if (totalFutureCosts > currentBalance * 0.1) {
       hasSignificantUpcomingExpenses = true;
     }
   }
@@ -1012,10 +1038,20 @@ export function generateProjections(
               currentMonthlyFee
             );
             const futureYearExpenses = futureExpenseDetails.reduce((sum, detail) => sum + detail.inflatedCost, 0);
-            if (futureYearExpenses > 0) {
+            
+            // Also check for loan payments in future years
+            let futureLoanPayments = 0;
+            for (const [loanId, loan] of activeLoans) {
+              if (futureYear >= loan.startYear && loan.remainingBalance > 0) {
+                futureLoanPayments += loan.annualPayment;
+              }
+            }
+            
+            const totalFutureCosts = futureYearExpenses + futureLoanPayments;
+            if (totalFutureCosts > 0) {
               hasAnyRemainingExpenses = true;
             }
-            upcomingExpenses += futureYearExpenses;
+            upcomingExpenses += totalFutureCosts;
           }
           
           // SPECIAL CASE: No more expenses for the rest of the simulation
@@ -1066,7 +1102,8 @@ export function generateProjections(
               year - 1,
               currentMonthlyFee,
               params,
-              expenses
+              expenses,
+              activeLoans
             );
             
             // For very high surplus, be more aggressive with reductions
@@ -1536,7 +1573,8 @@ export function generateProjections(
         finalProjection.year,
         lastYearFee,
         params,
-        expenses
+        expenses,
+        activeLoans
       );
       
       // Only apply reduction if the analysis strongly recommends it
