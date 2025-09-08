@@ -1216,6 +1216,16 @@ export function generateProjections(
     const totalSafetyNet = totalExpenseCost * (params.safetyNetPercentage / 100);
     const totalCashNeeded = totalExpenseCost + totalSafetyNet + totalLoanPayments;
     
+    // Debug logging for cash flow calculation
+    if (totalExpenseCost > 0) {
+      console.log(`🔍 YEAR ${year} CASH FLOW ANALYSIS:`);
+      console.log(`   Opening balance: $${availableCash.toLocaleString()}`);
+      console.log(`   Total expenses: $${totalExpenseCost.toLocaleString()}`);
+      console.log(`   Safety net (${params.safetyNetPercentage}%): $${totalSafetyNet.toLocaleString()}`);
+      console.log(`   Existing loan payments: $${totalLoanPayments.toLocaleString()}`);
+      console.log(`   Total cash needed: $${totalCashNeeded.toLocaleString()}`);
+    }
+    
     
     // Smart loan calculation for the entire year
     let yearLoanAmount = 0;
@@ -1225,41 +1235,17 @@ export function generateProjections(
       const shortfall = totalCashNeeded - availableCash;
       const maxYearLoanAmount = totalExpenseCost * (params.loanThresholdPercentage / 100);
       
-      // STRATEGIC LOAN PLANNING: Check if we should take maximum loan for future planning
-      let strategicLoanAmount = Math.min(shortfall, maxYearLoanAmount);
+      // SIMPLE LOAN LOGIC: Take loan based on actual need, up to the threshold limit
+      // The threshold is the MAXIMUM allowed, not a requirement to take that amount
+      yearLoanAmount = Math.min(shortfall, maxYearLoanAmount);
       
-      // Look ahead for future major expenses (next 3 years)
-      let hasSignificantFutureExpenses = false;
-      let totalFutureExpenses = 0;
-      
-      for (let futureYear = year + 1; futureYear <= year + 3 && futureYear < params.fiscalYear + params.period; futureYear++) {
-        const futureExpenseDetails = calculateYearExpenses(
-          expenses, 
-          futureYear, 
-          params.fiscalYear, 
-          params, 
-          false, 
-          0, 
-          currentMonthlyFee
-        );
-        const futureYearExpenses = futureExpenseDetails.reduce((sum, detail) => sum + detail.inflatedCost, 0);
-        totalFutureExpenses += futureYearExpenses;
-        
-        // Consider significant if future expenses > 30% of current available cash
-        if (futureYearExpenses > availableCash * 0.3) {
-          hasSignificantFutureExpenses = true;
-        }
-      }
-      
-      // If we have future major expenses and current shortfall is small, consider taking maximum loan
-      const isSmallCurrentShortfall = shortfall < maxYearLoanAmount * 0.5; // Less than 50% of max loan
-      
-      if (hasSignificantFutureExpenses && isSmallCurrentShortfall && totalExpenseCost > 0) {
-        // Take maximum allowable loan to build reserves for future expenses
-        strategicLoanAmount = maxYearLoanAmount;
-      }
-      
-      yearLoanAmount = strategicLoanAmount;
+      // Debug logging for loan calculation
+      console.log(`🔍 YEAR ${year} LOAN CALCULATION:`);
+      console.log(`   Total cash needed: $${totalCashNeeded.toLocaleString()}`);
+      console.log(`   Available cash: $${availableCash.toLocaleString()}`);
+      console.log(`   Shortfall: $${shortfall.toLocaleString()}`);
+      console.log(`   Max loan (${params.loanThresholdPercentage}% of $${totalExpenseCost.toLocaleString()}): $${maxYearLoanAmount.toLocaleString()}`);
+      console.log(`   Loan taken: $${yearLoanAmount.toLocaleString()}`);
       
       // Calculate percentage based on TOTAL expenses (not out-of-pocket)
       const actualPercentage = totalExpenseCost > 0 ? (yearLoanAmount / totalExpenseCost) * 100 : 0;
