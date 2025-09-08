@@ -559,12 +559,25 @@ function calculateConservativeFeeDecrease(
     return { canDecreaseFee: false, suggestedDecrease: 0, reasoning: atMinimumReason };
   }
   
-  // Calculate total upcoming expenses in next 10 years
+  // Check if this is the "no more expenses for rest of simulation" scenario FIRST
+  const remainingYears = (params.fiscalYear + params.period) - currentYear;
+  let hasAnyRemainingExpenses = false;
+  let remainingSimulationExpenses = 0;
+  for (let futureYear = currentYear + 1; futureYear < params.fiscalYear + params.period; futureYear++) {
+    const futureExpenseDetails = calculateYearExpenses(expenses, futureYear, params.fiscalYear, params, false, 0, 0);
+    const futureYearExpenses = futureExpenseDetails.reduce((sum, detail) => sum + detail.inflatedCost, 0);
+    remainingSimulationExpenses += futureYearExpenses;
+    if (futureYearExpenses > 0) {
+      hasAnyRemainingExpenses = true;
+    }
+  }
+
+  // Calculate total upcoming expenses using SAME logic as main surplus detection (remaining simulation years, not 10-year lookahead)
   let totalUpcomingExpenses = 0;
   let hasSignificantUpcomingExpenses = false;
-  const lookAheadYears = Math.min(10, (params.fiscalYear + params.period) - currentYear);
   
-  for (let futureYear = currentYear + 1; futureYear <= currentYear + lookAheadYears; futureYear++) {
+  // Use SAME calculation as main logic - remaining years in simulation only
+  for (let futureYear = currentYear + 1; futureYear < params.fiscalYear + params.period; futureYear++) {
     const futureExpenseDetails = calculateYearExpenses(expenses, futureYear, params.fiscalYear, params, false, 0, 0);
     const futureExpenses = futureExpenseDetails.reduce((sum, detail) => sum + detail.inflatedCost, 0);
     totalUpcomingExpenses += futureExpenses;
@@ -581,22 +594,31 @@ function calculateConservativeFeeDecrease(
   let safetyMultiplier: number;
   
   if (canGoToZero) {
-    // More aggressive reduction when no minimum fee constraint
-    safetyMultiplier = hasSignificantUpcomingExpenses ? 3 : 2.5;
+    // ULTRA aggressive reduction when no minimum fee constraint
+    safetyMultiplier = hasSignificantUpcomingExpenses ? 1.5 : 1.2;
   } else {
-    // Conservative when minimum fee exists
-    safetyMultiplier = hasSignificantUpcomingExpenses ? 4 : 3;
+    // Moderate when minimum fee exists
+    safetyMultiplier = hasSignificantUpcomingExpenses ? 2.0 : 1.5;
   }
   
   const targetReserve = totalUpcomingExpenses * safetyMultiplier;
   
-  if (currentBalance <= targetReserve) {
+  // OVERRIDE SAFETY CHECK for end-of-simulation scenarios with no remaining expenses
+  const isEndOfSimulationWithNoExpenses = !hasAnyRemainingExpenses && remainingYears <= 5;
+  
+  if (!isEndOfSimulationWithNoExpenses && currentBalance <= targetReserve) {
     return { 
       canDecreaseFee: false, 
       suggestedDecrease: 0, 
       reasoning: `Current balance ($${currentBalance.toLocaleString()}) needed for upcoming expenses ($${totalUpcomingExpenses.toLocaleString()})` 
     };
   }
+  
+  // For end-of-simulation with no expenses, use remaining simulation expenses instead
+  const effectiveUpcomingExpenses = isEndOfSimulationWithNoExpenses ? remainingSimulationExpenses : totalUpcomingExpenses;
+  
+  // DEBUG: Log the expense calculations to see why they differ from main logic
+  console.log(`   💡 FEE DECREASE CALC: totalUpcoming=$${totalUpcomingExpenses.toLocaleString()}, effective=$${effectiveUpcomingExpenses.toLocaleString()}, endOfSim=${isEndOfSimulationWithNoExpenses}`);
   
   // Calculate safe decrease amount
   const excessAmount = currentBalance - targetReserve;
@@ -605,31 +627,46 @@ function calculateConservativeFeeDecrease(
   let reductionPercentage: number;
   
   // For very high surpluses, be much more aggressive
-  const isVeryHighSurplus = currentBalance > totalUpcomingExpenses * 8; // 8x future expenses
+  // MUCH MORE AGGRESSIVE REDUCTION LOGIC
+  const isVeryHighSurplus = currentBalance > totalUpcomingExpenses * 3; // Reduced from 8x to 3x
+  const hasMinimalExpenses = totalUpcomingExpenses < 50000; // Very low upcoming expenses
   
-  if (canGoToZero && isVeryHighSurplus) {
-    // Extremely high surplus with no minimum fee - very aggressive
-    reductionPercentage = 0.6; // Up to 60% of excess
-  } else if (canGoToZero && excessAmount > totalUpcomingExpenses * 2) {
-    // Very substantial excess with no minimum fee - aggressive
-    reductionPercentage = 0.5; // Up to 50% of excess
-  } else if (canGoToZero && excessAmount > totalUpcomingExpenses) {
-    // Substantial excess with no minimum fee
-    reductionPercentage = 0.4; // Up to 40% of excess
-  } else if (canGoToZero) {
-    // Good excess with no minimum fee
-    reductionPercentage = 0.3; // Up to 30% of excess
-  } else if (isVeryHighSurplus) {
-    // Very high surplus but minimum fee exists - still be aggressive
-    reductionPercentage = 0.4; // Up to 40% of excess
+  let monthlyReduction: number;
+  
+  // SIMPLIFIED ULTRA-AGGRESSIVE LOGIC: Focus only on expenses, ignore starting balance completely
+  
+  
+  if (isEndOfSimulationWithNoExpenses && currentBalance > 20000) {
+    // NO MORE EXPENSES FOR REST OF SIMULATION: Immediate reduction to minimum fee
+    monthlyReduction = currentFee - effectiveMinimumFee;
+    reductionPercentage = 1.0; // For logging
+    console.log(`   🎯 END-OF-SIM: No expenses for remaining ${remainingYears} years - IMMEDIATE reduction to ${effectiveMinimumFee > 0 ? '$' + effectiveMinimumFee + ' minimum' : '$0'}`);
+  } else if (effectiveUpcomingExpenses === 0 && currentBalance > 15000) {
+    // NO EXPENSES: Ultra aggressive - reduce by 60% of current fee per year
+    monthlyReduction = Math.min(currentFee * 0.6, currentFee - effectiveMinimumFee);
+    reductionPercentage = 0.9; // For logging
+    console.log(`   🚀 ZERO EXPENSES DETECTED - Ultra aggressive 60% fee reduction`);
+  } else if (effectiveUpcomingExpenses < 25000 && currentBalance > 25000) {
+    // MINIMAL EXPENSES: Very aggressive - reduce by 25% of current fee per year  
+    monthlyReduction = Math.min(currentFee * 0.25, currentFee - effectiveMinimumFee);
+    reductionPercentage = 0.7; // For logging
+    console.log(`   ⚡ MINIMAL EXPENSES - Aggressive 25% fee reduction`);
+  } else if (currentBalance > effectiveUpcomingExpenses * 1.5) {
+    // HIGH SURPLUS: Aggressive - reduce by 30% of current fee per year
+    monthlyReduction = Math.min(currentFee * 0.3, currentFee - effectiveMinimumFee);
+    reductionPercentage = 0.5; // For logging
+    console.log(`   💰 HIGH SURPLUS - Aggressive 30% fee reduction`);
+  } else if (currentBalance > effectiveUpcomingExpenses * 1.1) {
+    // GOOD SURPLUS: Standard - reduce by 20% of current fee per year
+    monthlyReduction = Math.min(currentFee * 0.2, currentFee - effectiveMinimumFee);
+    reductionPercentage = 0.3; // For logging
+    console.log(`   ✅ GOOD SURPLUS - Standard 20% fee reduction`);
   } else {
-    // Conservative when minimum fee exists
-    reductionPercentage = 0.2; // Up to 20% of excess
+    // MINIMAL SURPLUS: Conservative - reduce by 10% of current fee per year
+    monthlyReduction = Math.min(currentFee * 0.1, currentFee - effectiveMinimumFee);
+    reductionPercentage = 0.1; // For logging
+    console.log(`   📊 MINIMAL SURPLUS - Conservative 10% fee reduction`);
   }
-  
-  const maxSafeReduction = excessAmount * reductionPercentage;
-  const yearlyReductionAmount = maxSafeReduction / Math.max(lookAheadYears, 3); // Spread over several years
-  const monthlyReduction = yearlyReductionAmount / (12 * (params.housingUnits || 1));
   
   // Calculate suggested new fee respecting minimum constraint
   const suggestedNewFee = Math.max(effectiveMinimumFee, currentFee - monthlyReduction);
@@ -645,7 +682,7 @@ function calculateConservativeFeeDecrease(
   }
   
   // Enhanced reasoning with zero-fee possibility
-  let reasoning = `Safe to reduce by $${actualDecrease.toFixed(2)} per unit. Excess: $${excessAmount.toLocaleString()}, Future expenses: $${totalUpcomingExpenses.toLocaleString()}`;
+  let reasoning = `Safe to reduce by $${actualDecrease.toFixed(2)} per unit. Excess: $${excessAmount.toLocaleString()}, Future expenses: $${effectiveUpcomingExpenses.toLocaleString()}`;
   
   if (canGoToZero && suggestedNewFee === 0) {
     reasoning += `. Fee can go to $0 (no minimum set)`;
@@ -670,6 +707,7 @@ export function generateProjections(
   investments: Investment[] = [],
   isNormalized: boolean = false
 ): YearProjection[] {
+  console.log('🚀 ULTRA-AGGRESSIVE FEE DECREASE VERSION - STARTING SIMULATION');
   // ENHANCED RETROSPECTIVE FEE ADJUSTMENT APPROACH
   // Step 1: Generate initial projections to identify deficits
   // Step 2: Analyze root causes of deficits by looking back at past years
@@ -945,14 +983,77 @@ export function generateProjections(
         console.log(`🔍 YEAR ${year}: No fee adjustment found (high starting balance scenario)`);
       }
       
-      // Enhanced fee decrease logic for surplus scenarios
-      else if (year > params.fiscalYear) { // Not in first year
+      // Enhanced fee decrease logic for surplus scenarios - ALWAYS CHECK, regardless of starting balance
+      if (year > params.fiscalYear) { // Not in first year
         const currentProjection = projections.find(p => p.year === year - 1);
         if (currentProjection && currentProjection.closingBalance > 0) {
           
-          // Check for substantial surplus that warrants fee reduction
-          const isSubstantialSurplus = currentProjection.closingBalance > params.startingAmount * 1.5;
-          const isVeryHighSurplus = currentProjection.closingBalance > params.startingAmount * 3;
+          // ENHANCED SURPLUS DETECTION: More intelligent thresholds based on starting balance and expenses
+          let surplusThreshold: number;
+          let veryHighSurplusThreshold: number;
+          
+          // Calculate upcoming expenses for better threshold setting
+          let upcomingExpenses = 0;
+          const remainingYears = (params.fiscalYear + params.period) - year;
+          let hasAnyRemainingExpenses = false;
+          
+          // Check ALL remaining years in the simulation, not just next 5
+          for (let futureYear = year; futureYear < params.fiscalYear + params.period; futureYear++) {
+            const futureExpenseDetails = calculateYearExpenses(
+              expenses, 
+              futureYear, 
+              params.fiscalYear, 
+              params, 
+              false, 
+              0, 
+              currentMonthlyFee
+            );
+            const futureYearExpenses = futureExpenseDetails.reduce((sum, detail) => sum + detail.inflatedCost, 0);
+            if (futureYearExpenses > 0) {
+              hasAnyRemainingExpenses = true;
+            }
+            upcomingExpenses += futureYearExpenses;
+          }
+          
+          // SPECIAL CASE: No more expenses for the rest of the simulation
+          const noMoreExpenses = !hasAnyRemainingExpenses;
+          
+          // ULTRA-AGGRESSIVE EXPENSE-ONLY BASED DETECTION: Ignore starting amount completely
+          // Focus ONLY on upcoming expenses for fee decrease decisions
+          
+          if (noMoreExpenses && remainingYears <= 5) {
+            // SPECIAL CASE: No more expenses for rest of simulation - IMMEDIATE reduction to minimum
+            surplusThreshold = 10000;  // Just $10K - almost any balance triggers reduction
+            veryHighSurplusThreshold = 20000; // Just $20K for immediate zero fee
+            console.log(`🎯 NO MORE EXPENSES for remaining ${remainingYears} years - IMMEDIATE fee reduction mode`);
+          } else if (upcomingExpenses > 0) {
+            // Base thresholds ONLY on upcoming expenses - ultra responsive
+            surplusThreshold = upcomingExpenses * 1.2;  // Just 1.2x upcoming expenses
+            veryHighSurplusThreshold = upcomingExpenses * 2.0; // Just 2x upcoming expenses
+          } else {
+            // No upcoming expenses - EXTREMELY aggressive since zero risk
+            surplusThreshold = 5000;   // Just $5K minimum buffer - ULTRA AGGRESSIVE
+            veryHighSurplusThreshold = 15000; // Just $15K for very aggressive reduction
+          }
+          
+          const isSubstantialSurplus = currentProjection.closingBalance > surplusThreshold;
+          const isVeryHighSurplus = currentProjection.closingBalance > veryHighSurplusThreshold;
+          
+          // Debug logging for surplus detection - LOG ALL YEARS TO DEBUG
+          if (true) { // Log ALL years to debug the issue
+            console.log(`🔍 YEAR ${year - 1} EXPENSE-BASED SURPLUS CHECK: Balance $${currentProjection.closingBalance.toLocaleString()}`);
+            console.log(`   Upcoming 5yr expenses: $${upcomingExpenses.toLocaleString()}`);
+            const thresholdDescription = noMoreExpenses && remainingYears <= 5 ? 'END-OF-SIM' : 
+                                       upcomingExpenses > 0 ? '1.2x expenses' : '$25K min';
+            const veryHighDescription = noMoreExpenses && remainingYears <= 5 ? 'END-OF-SIM' : 
+                                      upcomingExpenses > 0 ? '2x expenses' : '$50K min';
+            console.log(`   Surplus threshold: $${surplusThreshold.toLocaleString()} (${thresholdDescription})`);
+            console.log(`   Very high threshold: $${veryHighSurplusThreshold.toLocaleString()} (${veryHighDescription})`);
+            console.log(`   Surplus detected: ${isSubstantialSurplus ? '✅ YES' : '❌ NO'} | Very high: ${isVeryHighSurplus ? '✅ YES' : '❌ NO'}`);
+            if (noMoreExpenses) {
+              console.log(`   🎯 NO MORE EXPENSES for remaining ${remainingYears} years!`);
+            }
+          }
           
           if (isSubstantialSurplus) {
             console.log(`💰 SURPLUS DETECTED in year ${year - 1}: Balance $${currentProjection.closingBalance.toLocaleString()}`);
