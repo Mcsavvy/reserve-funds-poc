@@ -265,7 +265,7 @@ export function EditModelDialog({ model, open, onOpenChange }: EditModelDialogPr
                 control={form.control}
                 name="cashReserveThresholdPercentage"
                 render={({ field }) => (
-                  <FormItem>
+                  <FormItem hidden={true}>
                     <FormLabel>Cash Reserve Threshold (%)</FormLabel>
                     <FormControl>
                       <Input type="number" step="0.1" {...field} onChange={e => field.onChange(+e.target.value)} />

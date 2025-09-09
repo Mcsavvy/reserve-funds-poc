@@ -335,7 +335,7 @@ export function SimulationEditSidebar({
                 control={form.control}
                 name="cashReserveThresholdPercentage"
                 render={({ field }) => (
-                  <FormItem>
+                  <FormItem hidden={true}>
                     <FormLabel>Cash Reserve Threshold (%)</FormLabel>
                     <FormControl>
                       <Input 
