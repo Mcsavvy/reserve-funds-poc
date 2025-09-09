@@ -991,10 +991,15 @@ export function generateProjections(
           currentMonthlyFee = currentMonthlyFee + preCalculatedAdjustment;
           console.log(`📈 YEAR ${year}: ZERO-DEFICIT fee increase from $${oldFee.toFixed(2)} to $${currentMonthlyFee.toFixed(2)} (added $${preCalculatedAdjustment.toFixed(2)})`);
         } else {
+          // Special case for second year: use original starting fee as base for max calculation
+          const baseForMaxCalculation = (year === params.fiscalYear + 1) 
+            ? params.monthlyReserveFeesPerHousingUnit 
+            : currentMonthlyFee;
+            
           currentMonthlyFee = Math.min(
             currentMonthlyFee + preCalculatedAdjustment,
             params.maximumAllowableFeeIncrease > 0 
-              ? currentMonthlyFee * (1 + params.maximumAllowableFeeIncrease / 100)
+              ? baseForMaxCalculation * (1 + params.maximumAllowableFeeIncrease / 100)
               : currentMonthlyFee + preCalculatedAdjustment
           );
           console.log(`📈 YEAR ${year}: Preventive fee increase from $${oldFee.toFixed(2)} to $${currentMonthlyFee.toFixed(2)} based on deficit analysis`);
