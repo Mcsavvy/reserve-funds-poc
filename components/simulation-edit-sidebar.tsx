@@ -121,7 +121,7 @@ export function SimulationEditSidebar({
                         {...field} 
                         type="number" 
                         min="1" 
-                        max="50"
+                        max="100"
                         onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
                       />
                     </FormControl>

@@ -1417,6 +1417,17 @@ export function generateProjections(
       ? params.monthlyReserveFeesPerHousingUnit * 12 * (params.housingUnits || 0)
       : currentMonthlyFee * 12 * (params.housingUnits || 0);
     
+    // 🚫 SPECIAL FIRST TWO YEARS LOGIC: No collections if no expenses, no safety net, and no inflation
+    const isFirstTwoYears = (year === params.fiscalYear || year === params.fiscalYear + 1);
+    const hasNoExpenses = totalOutOfPocketExpenses === 0;
+    const hasNoSafetyNet = params.safetyNetPercentage === 0;
+    const hasNoInflation = params.inflationRate === 0;
+    
+    if (isFirstTwoYears && hasNoExpenses && hasNoSafetyNet && hasNoInflation) {
+      collections = 0;
+      console.log(`🚫 YEAR ${year}: No collections (first two years, no expenses, no safety net, no inflation)`);
+    }
+    
     // In normalized mode, we may need to adjust fees to eliminate deficits
     if (isNormalized) {
       // Calculate total cash needed including safety net and loan payments
