@@ -912,25 +912,34 @@ export function generateProjections(
   }
 
   for (let year = params.fiscalYear; year < params.fiscalYear + params.period; year++) {
+    // 📈 SPECIAL SECOND YEAR LOGIC: Handle this FIRST before any other adjustments
+    const isSecondYear = year === params.fiscalYear + 1;
+    if (isSecondYear && params.maximumAllowableFeeIncrease > 0 && !isNormalized) {
+      const baseFee = params.monthlyReserveFeesPerHousingUnit;
+      const exactSecondYearFee = baseFee * (1 + params.maximumAllowableFeeIncrease / 100);
+      
+      const oldFee = currentMonthlyFee;
+      currentMonthlyFee = exactSecondYearFee;
+      console.log(`📈 YEAR ${year}: Second year fee EXACTLY base + ${params.maximumAllowableFeeIncrease}% = $${oldFee.toFixed(2)} → $${currentMonthlyFee.toFixed(2)} (base: $${baseFee})`);
+    }
+    
+    // For normalized projections, apply fee adjustments normally
+    if (isNormalized) {
+      // Apply any pre-calculated fee adjustments from normalization
+      const preCalculatedAdjustment = feeAdjustments.get(year) || 0;
+      if (preCalculatedAdjustment > 0) {
+        const oldFee = currentMonthlyFee;
+        currentMonthlyFee += preCalculatedAdjustment;
+        console.log(`🔧 YEAR ${year}: Normalization adjustment from $${oldFee.toFixed(2)} to $${currentMonthlyFee.toFixed(2)} (+$${preCalculatedAdjustment.toFixed(2)})`);
+      }
+    }
+    
     // Apply intelligent fee adjustments FIRST, before calculating expenses and collections
-    if (!isNormalized) {
+    if (!isNormalized && !isSecondYear) { // Skip all other adjustments for second year
       const minimumFee = params.minimumCollectionFee || 0;
       
       // 🎯 GLOBAL FEE INCREASE LIMITER: Track starting fee to ensure total increase never exceeds max%
       const yearStartingFee = currentMonthlyFee;
-      
-      // 📈 SPECIAL SECOND YEAR LOGIC: Use base fee + max allowed increase for year 2
-      if (year === params.fiscalYear + 1 && params.maximumAllowableFeeIncrease > 0) {
-        const baseFee = params.monthlyReserveFeesPerHousingUnit;
-        const maxSecondYearFee = baseFee * (1 + params.maximumAllowableFeeIncrease / 100);
-        
-        // Only apply if we haven't already increased beyond this
-        if (currentMonthlyFee < maxSecondYearFee) {
-          const oldFee = currentMonthlyFee;
-          currentMonthlyFee = maxSecondYearFee;
-          console.log(`📈 YEAR ${year}: Special second year adjustment from $${oldFee.toFixed(2)} to $${currentMonthlyFee.toFixed(2)} (base + ${params.maximumAllowableFeeIncrease}%)`);
-        }
-      }
       
       // Apply any pre-calculated fee adjustments from deficit analysis
       const preCalculatedAdjustment = feeAdjustments.get(year) || 0;
@@ -1195,7 +1204,8 @@ export function generateProjections(
       }
       
       // 🎯 GLOBAL FEE INCREASE LIMITER: Ensure total increase never exceeds max percentage
-      if (params.maximumAllowableFeeIncrease > 0) {
+      // (Skip for second year as it has special handling)
+      if (params.maximumAllowableFeeIncrease > 0 && year !== params.fiscalYear + 1) {
         const maxAllowedFeeForYear = yearStartingFee * (1 + params.maximumAllowableFeeIncrease / 100);
         
         if (currentMonthlyFee > maxAllowedFeeForYear) {
