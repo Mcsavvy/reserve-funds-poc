@@ -662,6 +662,10 @@ function calculateConservativeFeeDecrease(
     // MINIMAL EXPENSES + SURPLUS: Aggressive reduction (40% of current fee)
     monthlyReduction = Math.min(currentFee * 0.4, currentFee - effectiveMinimumFee);
     console.log(`   💰 MINIMAL EXPENSES + SURPLUS - Aggressive 40% fee reduction`);
+  } else if (params.inflationRate === 0 && params.safetyNetPercentage === 0 && effectiveUpcomingExpenses < 50000 && currentBalance > 100000) {
+    // 🎯 ZERO INFLATION + ZERO SAFETY NET + LOW EXPENSES + HIGH BALANCE: Maximum reduction
+    monthlyReduction = Math.min(currentFee * 0.8, currentFee - effectiveMinimumFee);
+    console.log(`   🚫 ZERO INFLATION + ZERO SAFETY NET + LOW EXPENSES - Maximum 80% fee reduction`);
   } else if (currentBalance > targetReserve * 2.0) {
     // HIGH SURPLUS: Standard reduction (25% of current fee)
     monthlyReduction = Math.min(currentFee * 0.25, currentFee - effectiveMinimumFee);
@@ -1082,6 +1086,19 @@ export function generateProjections(
             console.log(`   🚀 EXCESSIVE SURPLUS: Aggressive reduction (30%+)`);
           }
           
+          // 🎯 ENHANCED LOW-EXPENSE LOGIC: Much more aggressive reduction for minimal expenses
+          if (totalUpcoming5YearCosts < 50000 && currentBalance > 100000) {
+            // Very low expenses + high balance = aggressive reduction
+            reductionAmount = Math.max(reductionAmount, currentMonthlyFee * 0.5); // At least 50% reduction
+            console.log(`   💰 LOW EXPENSES + HIGH BALANCE: Very aggressive reduction (50%+)`);
+          }
+          
+          // 🎯 ZERO INFLATION + ZERO SAFETY NET: Even more aggressive
+          if (params.inflationRate === 0 && params.safetyNetPercentage === 0 && totalUpcoming5YearCosts < 30000) {
+            reductionAmount = Math.max(reductionAmount, currentMonthlyFee * 0.7); // At least 70% reduction
+            console.log(`   🚫 ZERO INFLATION + ZERO SAFETY NET: Maximum reduction (70%+)`);
+          }
+          
           currentMonthlyFee = Math.max(
             params.minimumCollectionFee || 0,
             currentMonthlyFee - reductionAmount
@@ -1416,6 +1433,33 @@ export function generateProjections(
     let collections = (year === params.fiscalYear) 
       ? params.monthlyReserveFeesPerHousingUnit * 12 * (params.housingUnits || 0)
       : currentMonthlyFee * 12 * (params.housingUnits || 0);
+    
+    // 🚫 SPECIAL FIRST TWO YEARS LOGIC: No collections if no expenses (current + upcoming), no safety net, and no inflation
+    const isFirstTwoYears = (year === params.fiscalYear || year === params.fiscalYear + 1);
+    const hasNoCurrentExpenses = totalOutOfPocketExpenses === 0;
+    const hasNoSafetyNet = params.safetyNetPercentage === 0;
+    const hasNoInflation = params.inflationRate === 0;
+    
+    // Check for upcoming expenses in the next several years (extended look-ahead)
+    let hasUpcomingExpenses = false;
+    if (isFirstTwoYears) {
+      for (let futureYear = year + 1; futureYear <= year + 10; futureYear++) { // Extended to 10 years
+        const futureExpenseDetails = calculateYearExpenses(expenses, futureYear, params.fiscalYear, params, false, 0, 0);
+        const futureExpenses = futureExpenseDetails.reduce((sum, detail) => sum + detail.inflatedCost, 0);
+        if (futureExpenses > 0) {
+          hasUpcomingExpenses = true;
+          break;
+        }
+      }
+    }
+    
+    // Also check if we're in a deficit situation (should always collect fees)
+    const isInDeficit = currentBalance < 0;
+    
+    if (isFirstTwoYears && hasNoCurrentExpenses && hasNoSafetyNet && hasNoInflation && !hasUpcomingExpenses && !isInDeficit) {
+      collections = 0;
+      console.log(`🚫 YEAR ${year}: No collections (first two years, no current/upcoming expenses, no safety net, no inflation, no deficit)`);
+    }
     
     // In normalized mode, we may need to adjust fees to eliminate deficits
     if (isNormalized) {
