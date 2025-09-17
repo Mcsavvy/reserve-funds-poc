@@ -34,6 +34,23 @@ interface ProjectionTableProps {
 
 const columnHelper = createColumnHelper<YearProjection>();
 
+// Utility function to calculate fee percentage change
+function calculateFeePercentageChange(currentProjection: YearProjection, previousProjection: YearProjection | null, housingUnits: number): string | null {
+  if (!previousProjection || housingUnits <= 0) return null;
+  
+  const currentMonthlyFee = currentProjection.collections / (12 * housingUnits);
+  const previousMonthlyFee = previousProjection.collections / (12 * housingUnits);
+  
+  if (previousMonthlyFee === 0) return null;
+  
+  const percentageChange = ((currentMonthlyFee - previousMonthlyFee) / previousMonthlyFee) * 100;
+  
+  if (Math.abs(percentageChange) < 0.1) return null; // Don't show very small changes
+  
+  const sign = percentageChange > 0 ? '+' : '';
+  return `(${sign}${percentageChange.toFixed(1)}%)`;
+}
+
 // Utility function to convert projections to CSV format
 function projectionsToCSV(projections: YearProjection[], model: Model | null, simulationInvestments?: Record<number, any[]>): string {
   const headers = ['Year', 'Opening Balance', 'Collections', 'Total Expenses', 'Out-of-Pocket', 'Safety Net', 'Loans Taken', 'Loan Payments', 'Available to Invest', 'Invested Amount', 'Investment Liquidations', 'Projected Net Earnings', 'Loss in Purchase Power', 'Closing Balance'];
@@ -185,11 +202,28 @@ export function ProjectionTable({ projections, onYearClick, model, simulationInv
     }),
     columnHelper.accessor('collections', {
       header: 'Collections',
-      cell: (info) => (
-        <div className="text-green-600 font-medium">
-          {formatCurrency(info.getValue())}
-        </div>
-      ),
+      cell: (info) => {
+        const currentProjection = info.row.original;
+        const currentIndex = info.row.index;
+        const previousProjection = currentIndex > 0 ? projections[currentIndex - 1] : null;
+        const housingUnits = model?.housingUnits || 1;
+        
+        const percentageChange = calculateFeePercentageChange(currentProjection, previousProjection, housingUnits);
+        
+        return (
+          <div className="text-green-600 font-medium">
+            {formatCurrency(info.getValue())}
+            {percentageChange && (
+              <span className={cn(
+                "ml-1 text-xs",
+                percentageChange.includes('+') ? "text-red-500" : "text-blue-500"
+              )}>
+                {percentageChange}
+              </span>
+            )}
+          </div>
+        );
+      },
     }),
     // New column: Total Expenses (before loan deduction)
     columnHelper.display({
