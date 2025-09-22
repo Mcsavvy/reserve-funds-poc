@@ -1371,7 +1371,7 @@ export function generateProjections(
       const maxRateCap = (params.maximumAllowableFeeIncrease || 0) / 100;
       const capBase = (year === params.fiscalYear + 1) ? params.monthlyReserveFeesPerHousingUnit : lastAppliedMonthlyFee;
       const maxAllowedThisYear = capBase * (1 + maxRateCap);
-      const lookAheadYears = Math.min(Math.max(Math.floor(params.period * 0.1), 3), 10); // 10% of period, min 3, max 10
+      const lookAheadYears = Math.min(Math.max(Math.floor(params.period * 0.15), 6), 10); // 15% of period, min 6, max 10
 
       // project forward while holding current fee level
       let projectedBalance = currentBalance;
