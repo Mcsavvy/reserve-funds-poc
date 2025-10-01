@@ -1300,11 +1300,12 @@ export function generateProjections(
         console.log(`🎯 YEAR ${year}: Forcing base fee = $${currentMonthlyFee.toFixed(2)} (no auto increase in Year 1)`);
       } else {
         // YEAR 2: Cap against BASE fee, not previous applied fee
-        const prevYearFeeForCap = (year === params.fiscalYear + 1) ? baseFee : currentMonthlyFee;
+        const prevYearFeeForCap = (year === params.fiscalYear + 1) ? baseFee : lastAppliedMonthlyFee;
         const maxAllowed = prevYearFeeForCap * (1 + maxRate);
-        const cappedFee = Math.min(scheduledFee, maxAllowed);
-        console.log(`🎯 YEAR ${year}: Schedule=${scheduledFee.toFixed(2)}, PrevForCap=${prevYearFeeForCap.toFixed(2)}, MaxAllowed=${maxAllowed.toFixed(2)} → Applied=${cappedFee.toFixed(2)}`);
-        currentMonthlyFee = cappedFee;
+        const minAllowed = Math.max(params.minimumCollectionFee || 0, prevYearFeeForCap * (1 - maxRate));
+        const boundedFee = Math.max(minAllowed, Math.min(scheduledFee, maxAllowed));
+        console.log(`🎯 YEAR ${year}: Schedule=${scheduledFee.toFixed(2)}, Prev=${prevYearFeeForCap.toFixed(2)}, Range=[${minAllowed.toFixed(2)}, ${maxAllowed.toFixed(2)}] → Applied=${boundedFee.toFixed(2)}`);
+        currentMonthlyFee = boundedFee;
       }
     } else if (!isNormalized) {
       console.log(`🎯 YEAR ${year}: ⚠️ No optimal fee found in schedule (has: ${optimalFeeSchedule.has(year)}, isNormalized: ${isNormalized})`);
